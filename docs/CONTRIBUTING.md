@@ -71,10 +71,11 @@ to be able to use them:
 - `CONTAINER_REPO`: The container repository to use. Example: docker.io/kinvolk/gadget
 - `CONTAINER_REGISTRY_USERNAME` & `CONTAINER_REGISTRY_PASSWORD`: Authentication information for the the repo above.
 
-### Development environment on minikube for the traceloop gadget
+### Development environment on minikube
 
 It's possible to make changes to traceloop and test them on minikube locally without pushing container images to any registry.
 
+* Follow the specific [installation instructions](Documentation/install.md#minikube) for minikube.
 * Make sure the git repositories `traceloop` and `inspektor-gadget` are cloned in sibling directories
 * Minikube with the Docker driver does not work for traceloop. You can use another driver, for example:
 ```
@@ -89,8 +90,6 @@ $ kubectl gadget deploy | kubectl apply -f -
 ```
 $ make -C gadget-container/ minikube
 ```
-
-Note that the minikube image only works with the traceloop gadget.
 
 ## Testing
 
