@@ -23,7 +23,17 @@ LDFLAGS := "-X main.version=$(VERSION) \
 
 .DEFAULT_GOAL := build
 .PHONY: build
-build: manifests generate kubectl-gadget gadget-container
+build: manifests generate local-gadget kubectl-gadget gadget-container
+
+# local-gadget
+.PHONY: local-gadget
+local-gadget:
+	make -C gadget-container ebpf-objects
+	go build \
+		-tags withebpf \
+		-ldflags "-X main.version=$(VERSION)" \
+		-o local-gadget \
+		github.com/kinvolk/inspektor-gadget/cmd/local-gadget
 
 # kubectl-gadget
 .PHONY: kubectl-gadget
