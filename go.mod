@@ -1,6 +1,7 @@
 module github.com/kinvolk/inspektor-gadget
 
 require (
+	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e
 	github.com/cilium/ebpf v0.6.3-0.20210726151910-bf9a97c3237e
 	github.com/containerd/nri v0.1.1-0.20210619071632-28f76457b672
 	github.com/containers/common v0.42.0
