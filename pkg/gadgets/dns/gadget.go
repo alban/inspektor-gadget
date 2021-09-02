@@ -29,6 +29,7 @@ import (
 	"github.com/kinvolk/inspektor-gadget/pkg/gadgets"
 	dnstracer "github.com/kinvolk/inspektor-gadget/pkg/gadgets/dns/tracer"
 	dnstypes "github.com/kinvolk/inspektor-gadget/pkg/gadgets/dns/types"
+	pb "github.com/kinvolk/inspektor-gadget/pkg/gadgettracermanager/api"
 	"github.com/kinvolk/inspektor-gadget/pkg/gadgettracermanager/containerutils"
 	"github.com/kinvolk/inspektor-gadget/pkg/gadgettracermanager/pubsub"
 	eventtypes "github.com/kinvolk/inspektor-gadget/pkg/types"
@@ -41,6 +42,8 @@ type Trace struct {
 	started bool
 
 	tracer *dnstracer.Tracer
+
+	netnsHost uint64
 }
 
 type TraceFactory struct {
@@ -64,9 +67,13 @@ func (f *TraceFactory) LookupOrCreate(name types.NamespacedName) gadgets.Trace {
 	if ok {
 		return trace
 	}
+
+	netnsHost, _ := containerutils.GetNetNs(os.Getpid())
+
 	trace = &Trace{
-		client:   f.Client,
-		resolver: f.Resolver,
+		client:    f.Client,
+		resolver:  f.Resolver,
+		netnsHost: netnsHost,
 	}
 	f.traces[name.String()] = trace
 
@@ -169,29 +176,23 @@ func (t *Trace) Start(trace *gadgetv1alpha1.Trace) {
 		}
 	}
 
-	genKey := func(namespace, podname string, pid uint32) (key string, err error) {
-		key = namespace + "/" + podname
-
-		var netns1, netns2 uint64
-		netns1, err = containerutils.GetNetNs(int(pid))
-		if err == nil {
-			netns2, err = containerutils.GetNetNs(os.Getpid())
-		}
-		if err == nil {
-			if netns1 == netns2 {
-				key = "host"
-			}
-		}
-		log.Infof("DNS gadget: generate key %q from pod (%q %q pid:%d) (netns:%v host-netns:%v)", key, namespace, podname, pid, netns1, netns2)
-		return key, err
+	genKey := func(namespace, podname string) string {
+		return namespace + "/" + podname
 	}
 
-	attachContainerFunc := func(namespace, podname string, pid uint32) error {
-		key, err := genKey(namespace, podname, pid)
-		errMsg := ""
-		if err == nil {
-			err = t.tracer.Attach(key, pid, newDNSRequestCallback(key))
+	attachContainerFunc := func(container pb.ContainerDefinition) error {
+		key := genKey(container.Namespace, container.Podname)
+
+		if container.Netns == t.netnsHost {
+			t.resolver.PublishEvent(
+				traceName,
+				printEvent("skip pod with hostNetwork=true", "", key, "", ""),
+			)
+			return nil
 		}
+
+		errMsg := ""
+		err = t.tracer.Attach(key, container.Pid, newDNSRequestCallback(key))
 		if err != nil {
 			errMsg = err.Error()
 		}
@@ -202,12 +203,14 @@ func (t *Trace) Start(trace *gadgetv1alpha1.Trace) {
 		return nil
 	}
 
-	detachContainerFunc := func(namespace, podname string, pid uint32) {
-		key, err := genKey(namespace, podname, pid)
+	detachContainerFunc := func(container pb.ContainerDefinition) {
+		key := genKey(container.Namespace, container.Podname)
 
-		if err == nil {
-			err = t.tracer.Detach(key)
+		if container.Netns == t.netnsHost {
+			return
 		}
+
+		err := t.tracer.Detach(key)
 		errMsg := ""
 		if err != nil {
 			errMsg = err.Error()
@@ -221,9 +224,9 @@ func (t *Trace) Start(trace *gadgetv1alpha1.Trace) {
 	containerEventCallback := func(event pubsub.PubSubEvent) {
 		switch event.Type {
 		case pubsub.EVENT_TYPE_ADD_CONTAINER:
-			attachContainerFunc(event.Container.Namespace, event.Container.Podname, event.Container.Pid)
+			attachContainerFunc(event.Container)
 		case pubsub.EVENT_TYPE_REMOVE_CONTAINER:
-			detachContainerFunc(event.Container.Namespace, event.Container.Podname, event.Container.Pid)
+			detachContainerFunc(event.Container)
 		}
 	}
 
@@ -234,7 +237,7 @@ func (t *Trace) Start(trace *gadgetv1alpha1.Trace) {
 	)
 
 	for _, c := range existingContainers {
-		err := attachContainerFunc(c.Namespace, c.Podname, c.Pid)
+		err := attachContainerFunc(c)
 		if err != nil {
 			log.Warnf("Warning: couldn't attach BPF program: %s", err)
 			break
