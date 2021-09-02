@@ -109,8 +109,12 @@ func main() {
 	// Get cgroup-v2 id
 	cgroupId, _ := containerutils.GetCgroupID(cgroupPathV2WithMountpoint)
 
-	// Get mount namespace ino
+	// Get namespaces
 	mntns, err := containerutils.GetMntNs(ociStatePid)
+	if err != nil {
+		panic(err)
+	}
+	netns, err := containerutils.GetNetNs(ociStatePid)
 	if err != nil {
 		panic(err)
 	}
@@ -170,6 +174,7 @@ func main() {
 		CgroupPath:   cgroupPathV2WithMountpoint,
 		CgroupId:     cgroupId,
 		Mntns:        mntns,
+		Netns:        netns,
 		CgroupV1:     cgroupPathV1,
 		CgroupV2:     cgroupPathV2,
 		MountSources: mountSources,

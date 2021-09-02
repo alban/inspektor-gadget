@@ -126,8 +126,12 @@ func processContainer(r *types.Request, conf *igHookConf) error {
 	// Get cgroup-v2 id
 	cgroupId, _ := containerutils.GetCgroupID(cgroupPathV2WithMountpoint)
 
-	// Get mount namespace info
+	// Get namespaces
 	mntns, err := containerutils.GetMntNs(r.Pid)
+	if err != nil {
+		return err
+	}
+	netns, err := containerutils.GetNetNs(r.Pid)
 	if err != nil {
 		return err
 	}
@@ -160,6 +164,7 @@ func processContainer(r *types.Request, conf *igHookConf) error {
 		CgroupPath: cgroupPathV2WithMountpoint,
 		CgroupId:   cgroupId,
 		Mntns:      mntns,
+		Netns:      netns,
 		Labels:     labels,
 		Namespace:  namespace,
 		Podname:    podName,

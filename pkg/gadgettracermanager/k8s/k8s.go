@@ -106,11 +106,12 @@ func (k *K8sClient) FillContainer(containerDefinition *pb.ContainerDefinition) e
 	if containerDefinition.CgroupPath == "" ||
 		containerDefinition.CgroupId == 0 ||
 		containerDefinition.Mntns == 0 ||
+		containerDefinition.Netns == 0 ||
 		containerDefinition.CgroupV1 == "" ||
 		containerDefinition.CgroupV2 == "" {
 
 		if containerDefinition.Pid == 0 {
-			return fmt.Errorf("need either pid or (cgroup path, cgroup id and mntns): %s", containerDefinition.Id)
+			return fmt.Errorf("need either pid or (cgroup path, cgroup id, mntns and netns): %s", containerDefinition.Id)
 		}
 
 		cgroupPathV1, cgroupPathV2, err := containerutils.GetCgroupPaths(int(containerDefinition.Pid))
@@ -123,10 +124,15 @@ func (k *K8sClient) FillContainer(containerDefinition *pb.ContainerDefinition) e
 		if err != nil {
 			return fmt.Errorf("cannot find mnt namespace for container %s: %v", containerDefinition.Id, err)
 		}
+		netns, err := containerutils.GetNetNs(int(containerDefinition.Pid))
+		if err != nil {
+			return fmt.Errorf("cannot find net namespace for container %s: %v", containerDefinition.Id, err)
+		}
 
 		containerDefinition.CgroupPath = cgroupPathV2WithMountpoint
 		containerDefinition.CgroupId = cgroupId
 		containerDefinition.Mntns = mntns
+		containerDefinition.Netns = netns
 		containerDefinition.CgroupV1 = cgroupPathV1
 		containerDefinition.CgroupV2 = cgroupPathV2
 	}
