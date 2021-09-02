@@ -27,41 +27,6 @@ func (mock *mockWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// TestPostProcessFirstLineOutStream tests that the first line is printed
-// only once among the different nodes using out stream
-func TestPostProcessFirstLineOutStream(t *testing.T) {
-	mock := &mockWriter{[]byte{}}
-	postProcess := NewPostProcess(2, mock, mock, nil, nil)
-
-	postProcess.OutStreams[0].Write([]byte("PCOMM  PID    PPID   RET ARGS\n"))
-	postProcess.OutStreams[1].Write([]byte("PCOMM  PID    PPID   RET ARGS\n"))
-
-	expected := `
-PCOMM  PID    PPID   RET ARGS
-`
-	if "\n"+string(mock.output) != expected {
-		t.Fatalf("%v != %v", string(mock.output), expected)
-	}
-}
-
-// TestPostProcessFirstLineErrStream tests that the first line is always
-// printed for errStream
-func TestPostProcessFirstLineErrStream(t *testing.T) {
-	mock := &mockWriter{[]byte{}}
-	postProcess := NewPostProcess(2, mock, mock, nil, nil)
-
-	postProcess.ErrStreams[0].Write([]byte("error in node0\n"))
-	postProcess.ErrStreams[1].Write([]byte("error in node1\n"))
-
-	expected := `
-error in node0
-error in node1
-`
-	if "\n"+string(mock.output) != expected {
-		t.Fatalf("%v != %v", string(mock.output), expected)
-	}
-}
-
 func TestPostProcessMultipleLines(t *testing.T) {
 	var expected string
 	mock := &mockWriter{[]byte{}}
@@ -94,9 +59,6 @@ func TestMultipleNodes(t *testing.T) {
 
 	postProcess.OutStreams[0].Write([]byte("PCOMM  PID    PPID   RET ARGS\n"))
 	postProcess.OutStreams[0].Write([]byte("curl   100000 100000   0 /usr/bin/curl\n"))
-
-	postProcess.OutStreams[1].Write([]byte("PCOMM  PID    PPID   RET ARGS\n"))
-	postProcess.OutStreams[2].Write([]byte("PCOMM  PID    PPID   RET ARGS\n"))
 
 	postProcess.OutStreams[2].Write([]byte("mkdir  "))
 
