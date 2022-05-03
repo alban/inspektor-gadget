@@ -53,6 +53,11 @@ type ContainerEvent struct {
 	// Container's configuration is the config.json from the OCI runtime
 	// spec
 	ContainerConfig *ocispec.Spec
+
+	// Bundle is the directory containing the config.json from the OCI
+	// runtime spec
+	// See https://github.com/opencontainers/runtime-spec/blob/main/bundle.md
+	Bundle string
 }
 
 type RuncNotifyFunc func(notif ContainerEvent)
@@ -161,7 +166,7 @@ func cmdlineFromPid(pid int) []string {
 // generates an event on the notifier. This is automatically called for new
 // containers detected by RuncNotifier, but it can also be called for
 // containers detected externally such as initial containers.
-func (n *RuncNotifier) AddWatchContainerTermination(containerID string, containerPID int) error {
+func (n *RuncNotifier) AddWatchContainerTermination(containerID string, containerPID int, bundleDir string) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -175,7 +180,7 @@ func (n *RuncNotifier) AddWatchContainerTermination(containerID string, containe
 	if errno == unix.ENOSYS {
 		// pidfd_open not available. As a fallback, check if the
 		// process exists every second
-		go n.watchContainerTerminationFallback(containerID, containerPID)
+		go n.watchContainerTerminationFallback(containerID, containerPID, bundleDir)
 		return nil
 	}
 	if errno != 0 {
@@ -183,13 +188,13 @@ func (n *RuncNotifier) AddWatchContainerTermination(containerID string, containe
 	}
 
 	// watch for container termination with pidfd_open
-	go n.watchContainerTermination(containerID, containerPID, int(pidfd))
+	go n.watchContainerTermination(containerID, containerPID, int(pidfd), bundleDir)
 	return nil
 }
 
 // watchContainerTermination waits until the container terminates using
 // pidfd_open (Linux >= 5.3), then sends a notification.
-func (n *RuncNotifier) watchContainerTermination(containerID string, containerPID int, pidfd int) {
+func (n *RuncNotifier) watchContainerTermination(containerID string, containerPID int, pidfd int, bundleDir string) {
 	defer func() {
 		n.mu.Lock()
 		defer n.mu.Unlock()
@@ -212,6 +217,7 @@ func (n *RuncNotifier) watchContainerTermination(containerID string, containerPI
 				Type:         EventTypeRemoveContainer,
 				ContainerID:  containerID,
 				ContainerPID: uint32(containerPID),
+				Bundle:       bundleDir,
 			})
 			return
 		}
@@ -220,7 +226,7 @@ func (n *RuncNotifier) watchContainerTermination(containerID string, containerPI
 
 // watchContainerTerminationFallback waits until the container terminates
 // *without* using pidfd_open so it works on older kernels, then sends a notification.
-func (n *RuncNotifier) watchContainerTerminationFallback(containerID string, containerPID int) {
+func (n *RuncNotifier) watchContainerTerminationFallback(containerID string, containerPID int, bundleDir string) {
 	defer func() {
 		n.mu.Lock()
 		defer n.mu.Unlock()
@@ -241,6 +247,7 @@ func (n *RuncNotifier) watchContainerTerminationFallback(containerID string, con
 				Type:         EventTypeRemoveContainer,
 				ContainerID:  containerID,
 				ContainerPID: uint32(containerPID),
+				Bundle:       bundleDir,
 			})
 			return
 		}
@@ -323,7 +330,7 @@ func (n *RuncNotifier) watchPidFileIterate(pidFileDirNotify *fanotify.NotifyFD, 
 
 	containerID := filepath.Base(filepath.Clean(bundleDir))
 
-	err = n.AddWatchContainerTermination(containerID, containerPID)
+	err = n.AddWatchContainerTermination(containerID, containerPID, bundleDir)
 	if err != nil {
 		log.Errorf("runc fanotify: container %s with pid %d terminated before we could watch it: %s", containerID, containerPID, err)
 		return true, nil
@@ -334,6 +341,7 @@ func (n *RuncNotifier) watchPidFileIterate(pidFileDirNotify *fanotify.NotifyFD, 
 		ContainerID:     containerID,
 		ContainerPID:    uint32(containerPID),
 		ContainerConfig: containerConfig,
+		Bundle:          bundleDir,
 	})
 	return true, nil
 }

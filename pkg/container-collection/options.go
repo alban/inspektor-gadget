@@ -575,7 +575,7 @@ func WithRuncFanotify() ContainerCollectionOption {
 
 		// Future containers
 		cc.containerEnrichers = append(cc.containerEnrichers, func(container *pb.ContainerDefinition) bool {
-			err := runcNotifier.AddWatchContainerTermination(container.Id, int(container.Pid))
+			err := runcNotifier.AddWatchContainerTermination(container.Id, int(container.Pid), "")
 			if err != nil {
 				log.Errorf("runc fanotify enricher: failed to watch container %s: %s", container.Id, err)
 				return false
