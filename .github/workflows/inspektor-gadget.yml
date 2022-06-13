@@ -17,12 +17,12 @@ jobs:
     # level: 0
     runs-on: ubuntu-latest
     steps:
-    - name: Setup go 1.17
+    - name: Setup Go
       uses: actions/setup-go@v1
       with:
-        go-version: 1.17
+        go-version: 1.18
       id: go
-    - name: Cache go 1.17
+    - name: Cache Go
       uses: actions/cache@v2
       with:
         path: |
@@ -43,12 +43,12 @@ jobs:
     # level: 0
     runs-on: ubuntu-latest
     steps:
-    - name: Setup go 1.17
+    - name: Setup Go
       uses: actions/setup-go@v1
       with:
-        go-version: 1.17
+        go-version: 1.18
       id: go
-    - name: Cache go 1.17
+    - name: Cache Go
       uses: actions/cache@v2
       with:
         path: |
@@ -67,9 +67,9 @@ jobs:
       run: |
         make -C gadget-container ebpf-objects
     - name: Lint
-      uses: golangci/golangci-lint-action@v3.1.0
+      uses: golangci/golangci-lint-action@v3.2.0
       with:
-        version: v1.44.2
+        version: v1.46.2
         working-directory: /home/runner/work/inspektor-gadget/inspektor-gadget
         # Workaround to display the output:
         # https://github.com/golangci/golangci-lint-action/issues/119#issuecomment-981090648
@@ -87,12 +87,12 @@ jobs:
           - os: windows
             arch: arm64
     steps:
-    - name: Setup go 1.17
+    - name: Setup Go
       uses: actions/setup-go@v1
       with:
-        go-version: 1.17
+        go-version: 1.18
       id: go
-    - name: Cache go 1.17
+    - name: Cache Go
       uses: actions/cache@v2
       with:
         path: |
@@ -154,12 +154,12 @@ jobs:
         # TODO add local-gadget-linux-arm64
         local-gadget-target: [local-gadget-linux-amd64]
     steps:
-    - name: Setup go 1.17
+    - name: Setup Go
       uses: actions/setup-go@v1
       with:
-        go-version: 1.17
+        go-version: 1.18
       id: go
-    - name: Cache go 1.17
+    - name: Cache Go
       uses: actions/cache@v2
       with:
         path: |
@@ -328,12 +328,12 @@ jobs:
     # level: 0
     runs-on: ubuntu-latest
     steps:
-    - name: Setup go 1.17
+    - name: Setup Go
       uses: actions/setup-go@v1
       with:
-        go-version: 1.17
+        go-version: 1.18
       id: go
-    - name: Cache go 1.17
+    - name: Cache Go
       uses: actions/cache@v2
       with:
         path: |
@@ -358,12 +358,12 @@ jobs:
     # level: 0
     runs-on: ubuntu-latest
     steps:
-    - name: Setup go 1.17
+    - name: Setup Go
       uses: actions/setup-go@v1
       with:
-        go-version: 1.17
+        go-version: 1.18
       id: go
-    - name: Cache go 1.17
+    - name: Cache Go
       uses: actions/cache@v2
       with:
         path: |
