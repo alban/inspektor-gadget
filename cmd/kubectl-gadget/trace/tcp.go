@@ -32,9 +32,9 @@ var tcptracerCmd = &cobra.Command{
 	Short: "Trace tcp connect, accept and close",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// print header
-		switch params.OutputMode {
+		switch params.OutputConf.OutputMode {
 		case utils.OutputModeCustomColumns:
-			fmt.Println(getCustomTcptracerColsHeader(params.CustomColumns))
+			fmt.Println(getCustomTcptracerColsHeader(params.OutputConf.CustomColumns))
 		case utils.OutputModeColumns:
 			fmt.Printf("%-16s %-16s %-16s %-16s %s %-6s %-16s %-3s %-16s %-16s %-7s %-7s\n",
 				"NODE", "NAMESPACE", "POD", "CONTAINER",
@@ -90,18 +90,18 @@ func tcptracerTransformLine(line string) string {
 	}
 
 	if e.Type != eventtypes.NORMAL {
-		utils.ManageSpecialEvent(e.Event, params.Verbose)
+		utils.ManageSpecialEvent(e.Event, params.OutputConf.Verbose)
 		return ""
 	}
 
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeColumns:
 		sb.WriteString(fmt.Sprintf("%-16s %-16s %-16s %-16s %s %-6d %-16s %-3d %-16s %-16s %-7d %-7d",
 			e.Node, e.Namespace, e.Pod, e.Container,
 			getOperationShort(e.Operation), e.Pid, e.Comm, e.IPVersion,
 			e.Saddr, e.Daddr, e.Sport, e.Dport))
 	case utils.OutputModeCustomColumns:
-		for _, col := range params.CustomColumns {
+		for _, col := range params.OutputConf.CustomColumns {
 			switch col {
 			case "node":
 				sb.WriteString(fmt.Sprintf("%-16s", e.Node))

@@ -32,9 +32,9 @@ var auditSeccompCmd = &cobra.Command{
 	Short: "Audit syscalls according to the seccomp profile",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// print header
-		switch params.OutputMode {
+		switch params.OutputConf.OutputMode {
 		case utils.OutputModeCustomColumns:
-			fmt.Println(getCustomAuditSeccompColsHeader(params.CustomColumns))
+			fmt.Println(getCustomAuditSeccompColsHeader(params.OutputConf.CustomColumns))
 		case utils.OutputModeColumns:
 			fmt.Printf("%-16s %-16s %-16s %-16s %-6s %-6s %-16s %-16s\n",
 				"NODE", "NAMESPACE", "POD", "CONTAINER",
@@ -75,18 +75,18 @@ func auditSeccompTransformLine(line string) string {
 	}
 
 	if e.Type != eventtypes.NORMAL {
-		utils.ManageSpecialEvent(e.Event, params.Verbose)
+		utils.ManageSpecialEvent(e.Event, params.OutputConf.Verbose)
 		return ""
 	}
 
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeColumns:
 		sb.WriteString(fmt.Sprintf("%-16s %-16s %-16s %-16s %-16s %-6d %-16s %-16s",
 			e.Node, e.Namespace, e.Pod, e.Container,
 			e.Comm, e.Pid, e.Syscall, e.Code))
 
 	case utils.OutputModeCustomColumns:
-		for _, col := range params.CustomColumns {
+		for _, col := range params.OutputConf.CustomColumns {
 			switch col {
 			case "node":
 				sb.WriteString(fmt.Sprintf("%-16s", e.Node))

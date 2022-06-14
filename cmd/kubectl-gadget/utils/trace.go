@@ -905,7 +905,7 @@ func genericStreamsDisplay(
 	transformLine func(string) string,
 ) error {
 	transform := func(line string) string {
-		if params.OutputMode == OutputModeJSON {
+		if params.OutputConf.OutputMode == OutputModeJSON {
 			return line
 		}
 		return transformLine(line)
@@ -931,7 +931,7 @@ func genericStreams(
 
 	verbose := false
 	// verbose only when not json is used
-	if params.Verbose && params.OutputMode != OutputModeJSON {
+	if params.OutputConf.Verbose && params.OutputConf.OutputMode != OutputModeJSON {
 		verbose = true
 	}
 
@@ -978,7 +978,7 @@ func genericStreams(
 	for {
 		select {
 		case <-sigs:
-			if params.OutputMode != OutputModeJSON {
+			if params.OutputConf.OutputMode != OutputModeJSON {
 				fmt.Println("\nTerminating...")
 			}
 			return nil

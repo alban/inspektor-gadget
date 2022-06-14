@@ -136,7 +136,7 @@ func blockIOStartPrintLoop() {
 }
 
 func blockIOPrintHeader() {
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeColumns:
 		if term.IsTerminal(int(os.Stdout.Fd())) {
 			utils.ClearScreen()
@@ -153,7 +153,7 @@ func blockIOPrintHeader() {
 		} else {
 			fmt.Println("")
 		}
-		fmt.Println(blockIOGetCustomColsHeader(params.CustomColumns))
+		fmt.Println(blockIOGetCustomColsHeader(params.OutputConf.CustomColumns))
 	}
 }
 
@@ -171,7 +171,7 @@ func blockIOPrintEvents() {
 
 	types.SortStats(stats, blockIOSortBy)
 
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeColumns:
 		for idx, event := range stats {
 			if idx == maxRows {
@@ -200,7 +200,7 @@ func blockIOPrintEvents() {
 			if idx == maxRows {
 				break
 			}
-			fmt.Println(blockIOFormatEventCustomCols(&stat, params.CustomColumns))
+			fmt.Println(blockIOFormatEventCustomCols(&stat, params.OutputConf.CustomColumns))
 		}
 	}
 }

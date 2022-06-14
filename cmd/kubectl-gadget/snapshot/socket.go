@@ -136,11 +136,11 @@ func socketTransformEvent(e types.Event) string {
 	var sb strings.Builder
 
 	if e.Type != eventtypes.NORMAL {
-		utils.ManageSpecialEvent(e.Event, params.Verbose)
+		utils.ManageSpecialEvent(e.Event, params.OutputConf.Verbose)
 		return ""
 	}
 
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeColumns:
 		extendedInformation := ""
 		if socketCollectorParamExtended {
@@ -152,7 +152,7 @@ func socketTransformEvent(e types.Event) string {
 			e.LocalAddress, e.LocalPort, e.RemoteAddress, e.RemotePort,
 			e.Status, extendedInformation))
 	case utils.OutputModeCustomColumns:
-		for _, col := range params.CustomColumns {
+		for _, col := range params.OutputConf.CustomColumns {
 			switch col {
 			case "node":
 				sb.WriteString(fmt.Sprintf("%s\t", e.Node))
@@ -206,7 +206,7 @@ func printSockets(allSockets []types.Event) error {
 	})
 
 	// JSON output mode does not need any additional parsing
-	if params.OutputMode == utils.OutputModeJSON {
+	if params.OutputConf.OutputMode == utils.OutputModeJSON {
 		b, err := json.MarshalIndent(allSockets, "", "  ")
 		if err != nil {
 			return utils.WrapInErrMarshalOutput(err)
@@ -223,9 +223,9 @@ func printSockets(allSockets []types.Event) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 4, ' ', 0)
 
 	// Print all or requested columns
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeCustomColumns:
-		fmt.Fprintln(w, getCustomSocketColsHeader(params.CustomColumns))
+		fmt.Fprintln(w, getCustomSocketColsHeader(params.OutputConf.CustomColumns))
 	case utils.OutputModeColumns:
 		extendedHeader := ""
 		if socketCollectorParamExtended {

@@ -143,7 +143,7 @@ func fileStartOutputLoop() {
 }
 
 func filePrintHeader() {
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeColumns:
 		if term.IsTerminal(int(os.Stdout.Fd())) {
 			utils.ClearScreen()
@@ -159,7 +159,7 @@ func filePrintHeader() {
 		} else {
 			fmt.Println("")
 		}
-		fmt.Println(fileGetCustomColsHeader(params.CustomColumns))
+		fmt.Println(fileGetCustomColsHeader(params.OutputConf.CustomColumns))
 	}
 }
 
@@ -177,7 +177,7 @@ func filePrintEvents() {
 
 	types.SortStats(stats, fileSortBy)
 
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeColumns:
 		for idx, event := range stats {
 			if idx == maxRows {
@@ -200,7 +200,7 @@ func filePrintEvents() {
 			if idx == maxRows {
 				break
 			}
-			fmt.Println(fileFormatEventCustomCols(&stat, params.CustomColumns))
+			fmt.Println(fileFormatEventCustomCols(&stat, params.OutputConf.CustomColumns))
 		}
 	}
 }

@@ -32,9 +32,9 @@ var mountsnoopCmd = &cobra.Command{
 	Short: "Trace mount and umount system calls",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// print header
-		switch params.OutputMode {
+		switch params.OutputConf.OutputMode {
 		case utils.OutputModeCustomColumns:
-			fmt.Println(getCustomMountsnoopColsHeader(params.CustomColumns))
+			fmt.Println(getCustomMountsnoopColsHeader(params.OutputConf.CustomColumns))
 		case utils.OutputModeColumns:
 			fmt.Printf("%-16s %-16s %-16s %-16s %-16s %-6s %-6s %-10s %s\n",
 				"NODE", "NAMESPACE", "POD", "CONTAINER",
@@ -89,17 +89,17 @@ func mountsnoopTransformLine(line string) string {
 	}
 
 	if e.Type != eventtypes.NORMAL {
-		utils.ManageSpecialEvent(e.Event, params.Verbose)
+		utils.ManageSpecialEvent(e.Event, params.OutputConf.Verbose)
 		return ""
 	}
 
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeColumns:
 		sb.WriteString(fmt.Sprintf("%-16s %-16s %-16s %-16s %-16s %-6d %-6d %-10d %s",
 			e.Node, e.Namespace, e.Pod, e.Container,
 			e.Comm, e.Pid, e.Tid, e.MountNsID, getCall(&e)))
 	case utils.OutputModeCustomColumns:
-		for _, col := range params.CustomColumns {
+		for _, col := range params.OutputConf.CustomColumns {
 			switch col {
 			case "node":
 				sb.WriteString(fmt.Sprintf("%-16s", e.Node))

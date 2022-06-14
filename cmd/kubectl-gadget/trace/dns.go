@@ -32,9 +32,9 @@ var dnsCmd = &cobra.Command{
 	Short: "Trace DNS requests",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// print header
-		switch params.OutputMode {
+		switch params.OutputConf.OutputMode {
 		case utils.OutputModeCustomColumns:
-			fmt.Println(getCustomDNSColsHeader(params.CustomColumns))
+			fmt.Println(getCustomDNSColsHeader(params.OutputConf.CustomColumns))
 		case utils.OutputModeColumns:
 			fmt.Printf("%-16s %-16s %-16s %-9s %-10s %s\n",
 				"NODE", "NAMESPACE", "POD",
@@ -75,16 +75,16 @@ func dnsTransformLine(line string) string {
 	}
 
 	if e.Type != eventtypes.NORMAL {
-		utils.ManageSpecialEvent(e.Event, params.Verbose)
+		utils.ManageSpecialEvent(e.Event, params.OutputConf.Verbose)
 		return ""
 	}
 
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeColumns:
 		sb.WriteString(fmt.Sprintf("%-16s %-16s %-16s %-9s %-10s %s",
 			e.Node, e.Namespace, e.Pod, e.PktType, e.QType, e.DNSName))
 	case utils.OutputModeCustomColumns:
-		for _, col := range params.CustomColumns {
+		for _, col := range params.OutputConf.CustomColumns {
 			switch col {
 			case "node":
 				sb.WriteString(fmt.Sprintf("%-16s", e.Node))

@@ -112,11 +112,11 @@ func processTransformEvent(e types.Event) string {
 	var sb strings.Builder
 
 	if e.Type != eventtypes.NORMAL {
-		utils.ManageSpecialEvent(e.Event, params.Verbose)
+		utils.ManageSpecialEvent(e.Event, params.OutputConf.Verbose)
 		return ""
 	}
 
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeColumns:
 		if processCollectorParamThreads {
 			sb.WriteString(fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%d\t%d",
@@ -128,7 +128,7 @@ func processTransformEvent(e types.Event) string {
 				e.Command, e.Pid))
 		}
 	case utils.OutputModeCustomColumns:
-		for _, col := range params.CustomColumns {
+		for _, col := range params.OutputConf.CustomColumns {
 			switch col {
 			case "node":
 				sb.WriteString(fmt.Sprintf("%s\t", e.Node))
@@ -184,7 +184,7 @@ func printProcesses(allProcesses []types.Event) error {
 	})
 
 	// JSON output mode does not need any additional parsing
-	if params.OutputMode == utils.OutputModeJSON {
+	if params.OutputConf.OutputMode == utils.OutputModeJSON {
 		b, err := json.MarshalIndent(allProcesses, "", "  ")
 		if err != nil {
 			return utils.WrapInErrMarshalOutput(err)
@@ -201,9 +201,9 @@ func printProcesses(allProcesses []types.Event) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 4, ' ', 0)
 
 	// Print all or requested columns
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeCustomColumns:
-		fmt.Fprintln(w, getCustomProcessColsHeader(params.CustomColumns))
+		fmt.Fprintln(w, getCustomProcessColsHeader(params.OutputConf.CustomColumns))
 	case utils.OutputModeColumns:
 		if processCollectorParamThreads {
 			fmt.Fprintln(w, "NODE\tNAMESPACE\tPOD\tCONTAINER\tCOMM\tTGID\tPID")

@@ -63,9 +63,9 @@ var fsslowerCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// print header
-		switch params.OutputMode {
+		switch params.OutputConf.OutputMode {
 		case utils.OutputModeCustomColumns:
-			fmt.Println(getCustomFsslowerColsHeader(params.CustomColumns))
+			fmt.Println(getCustomFsslowerColsHeader(params.OutputConf.CustomColumns))
 		case utils.OutputModeColumns:
 			fmt.Printf("%-16s %-16s %-16s %-16s %-16s %-6s %1s %-6s %-7s %-8s %s\n",
 				"NODE", "NAMESPACE", "POD", "CONTAINER",
@@ -119,7 +119,7 @@ func fsslowerTransformLine(line string) string {
 	}
 
 	if e.Type != eventtypes.NORMAL {
-		utils.ManageSpecialEvent(e.Event, params.Verbose)
+		utils.ManageSpecialEvent(e.Event, params.OutputConf.Verbose)
 		return ""
 	}
 
@@ -128,13 +128,13 @@ func fsslowerTransformLine(line string) string {
 		e.Bytes = 0
 	}
 
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeColumns:
 		sb.WriteString(fmt.Sprintf("%-16s %-16s %-16s %-16s %-16s %-6d %1s %-6d %-7d %-8.2f %s",
 			e.Node, e.Namespace, e.Pod, e.Container,
 			e.Comm, e.Pid, e.Op, e.Bytes, e.Offset, float64(e.Latency)/1000.0, e.File))
 	case utils.OutputModeCustomColumns:
-		for _, col := range params.CustomColumns {
+		for _, col := range params.OutputConf.CustomColumns {
 			switch col {
 			case "node":
 				sb.WriteString(fmt.Sprintf("%-16s", e.Node))

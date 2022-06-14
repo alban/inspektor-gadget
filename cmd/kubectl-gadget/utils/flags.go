@@ -47,6 +47,18 @@ const (
 
 var supportedOutputModes = []string{OutputModeColumns, OutputModeJSON, OutputModeCustomColumns}
 
+// OutputConfig contains the flags that describes how to print the gadget's output
+type OutputConfig struct {
+	// OutputMode specifies the way output should be printed
+	OutputMode string
+
+	// List of columns to print (only meaningful when OutputMode is "columns=...")
+	CustomColumns []string
+
+	// Verbose prints additional information
+	Verbose bool
+}
+
 // CommonFlags contains CLI flags common to several gadgets
 type CommonFlags struct {
 	// LabelsRaw allows to filter containers with a label selector in the
@@ -78,14 +90,8 @@ type CommonFlags struct {
 	// Containername allows to filter containers by name
 	Containername string
 
-	// OutputMode specifies the way output should be printed
-	OutputMode string
-
-	// Verbose prints additional information
-	Verbose bool
-
-	// List of columns to print (only meaningful when OutputMode is "columns=...")
-	CustomColumns []string
+	// OutputConf specifies the way output should be printed
+	OutputConf OutputConfig
 
 	// Number of seconds that the gadget will run for
 	Timeout int
@@ -149,12 +155,12 @@ func AddCommonFlags(command *cobra.Command, params *CommonFlags) {
 
 		// Output Mode
 		switch {
-		case params.OutputMode == OutputModeColumns:
+		case params.OutputConf.OutputMode == OutputModeColumns:
 			fallthrough
-		case params.OutputMode == OutputModeJSON:
+		case params.OutputConf.OutputMode == OutputModeJSON:
 			return nil
-		case strings.HasPrefix(params.OutputMode, OutputModeCustomColumns):
-			parts := strings.Split(params.OutputMode, "=")
+		case strings.HasPrefix(params.OutputConf.OutputMode, OutputModeCustomColumns):
+			parts := strings.Split(params.OutputConf.OutputMode, "=")
 			if len(parts) != 2 {
 				return WrapInErrInvalidArg(OutputModeCustomColumns,
 					errors.New("expects a comma separated list of columns to use"))
@@ -168,11 +174,11 @@ func AddCommonFlags(command *cobra.Command, params *CommonFlags) {
 				}
 			}
 
-			params.CustomColumns = cols
-			params.OutputMode = OutputModeCustomColumns
+			params.OutputConf.CustomColumns = cols
+			params.OutputConf.OutputMode = OutputModeCustomColumns
 		default:
 			return WrapInErrInvalidArg("--output / -o",
-				fmt.Errorf("%q is not a valid output format", params.OutputMode))
+				fmt.Errorf("%q is not a valid output format", params.OutputConf.OutputMode))
 		}
 		return nil
 	}
@@ -223,7 +229,7 @@ func AddCommonFlags(command *cobra.Command, params *CommonFlags) {
 	)
 
 	command.PersistentFlags().StringVarP(
-		&params.OutputMode,
+		&params.OutputConf.OutputMode,
 		"output",
 		"o",
 		OutputModeColumns,
@@ -231,7 +237,7 @@ func AddCommonFlags(command *cobra.Command, params *CommonFlags) {
 	)
 
 	command.PersistentFlags().BoolVarP(
-		&params.Verbose,
+		&params.OutputConf.Verbose,
 		"verbose",
 		"",
 		false,

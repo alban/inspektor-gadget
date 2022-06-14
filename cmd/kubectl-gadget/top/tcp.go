@@ -166,7 +166,7 @@ func tcpStartPrintLoop() {
 }
 
 func tcpPrintHeader() {
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeColumns:
 		if term.IsTerminal(int(os.Stdout.Fd())) {
 			utils.ClearScreen()
@@ -182,7 +182,7 @@ func tcpPrintHeader() {
 		} else {
 			fmt.Println("")
 		}
-		fmt.Println(tcpGetCustomColsHeader(params.CustomColumns))
+		fmt.Println(tcpGetCustomColsHeader(params.OutputConf.CustomColumns))
 	}
 }
 
@@ -200,7 +200,7 @@ func tcpPrintEvents() {
 
 	types.SortStats(stats, tcpSortBy)
 
-	switch params.OutputMode {
+	switch params.OutputConf.OutputMode {
 	case utils.OutputModeColumns:
 		for idx, event := range stats {
 			if idx == maxRows {
@@ -231,7 +231,7 @@ func tcpPrintEvents() {
 			if idx == maxRows {
 				break
 			}
-			fmt.Println(tcpFormatEventCustomCols(&stat, params.CustomColumns))
+			fmt.Println(tcpFormatEventCustomCols(&stat, params.OutputConf.CustomColumns))
 		}
 	}
 }
