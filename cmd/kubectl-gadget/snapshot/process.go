@@ -15,19 +15,14 @@
 package snapshot
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/kinvolk/inspektor-gadget/cmd/kubectl-gadget/utils"
-	gadgetv1alpha1 "github.com/kinvolk/inspektor-gadget/pkg/apis/gadget/v1alpha1"
 	"github.com/kinvolk/inspektor-gadget/pkg/gadgets/process-collector/types"
-	eventtypes "github.com/kinvolk/inspektor-gadget/pkg/types"
 )
 
 type ProcessFlags struct {
@@ -57,59 +52,8 @@ func initProcessCmd(commonFlags *utils.CommonFlags) *cobra.Command {
 				CommonFlags:      commonFlags,
 			}
 
-			callback := func(results []gadgetv1alpha1.Trace) error {
-				allEvents := []types.Event{}
-
-				for _, i := range results {
-					if len(i.Status.Output) == 0 {
-						continue
-					}
-
-					var events []types.Event
-					if err := json.Unmarshal([]byte(i.Status.Output), &events); err != nil {
-						return utils.WrapInErrUnmarshalOutput(err, i.Status.Output)
-					}
-					allEvents = append(allEvents, events...)
-				}
-
-				sortProcessEvents(allEvents, &processFlags)
-
-				switch commonFlags.OutputConf.OutputMode {
-				case utils.OutputModeJSON:
-					b, err := json.MarshalIndent(allEvents, "", "  ")
-					if err != nil {
-						return utils.WrapInErrMarshalOutput(err)
-					}
-
-					fmt.Printf("%s\n", b)
-					return nil
-				case utils.OutputModeColumns:
-					fallthrough
-				case utils.OutputModeCustomColumns:
-					// In the snapshot gadgets it's possible to use a tabwriter because
-					// we have the full list of events to print available, hence the
-					// tablewriter is able to determine the columns width. In other
-					// gadgets we don't know the size of all columns "a priori", hence
-					// we have to do a best effort printing fixed-width columns.
-					w := tabwriter.NewWriter(os.Stdout, 0, 0, 4, ' ', 0)
-
-					fmt.Fprintln(w, getProcessColsHeader(&processFlags, commonFlags.OutputConf.CustomColumns))
-					for _, e := range allEvents {
-						if e.Type != eventtypes.NORMAL {
-							utils.ManageSpecialEvent(e.Event, commonFlags.OutputConf.Verbose)
-							continue
-						}
-
-						fmt.Fprintln(w, transformProcessEvent(&e, &processFlags, &commonFlags.OutputConf))
-					}
-
-					w.Flush()
-				default:
-					return utils.WrapInErrOutputModeNotSupported(commonFlags.OutputConf.OutputMode)
-				}
-
-				return nil
-			}
+			callback := getSnapshotCallback(&commonFlags.OutputConf, &processFlags,
+				sortProcessEvents, getProcessColsHeader, transformProcessEvent)
 
 			return utils.RunTraceAndPrintStatusOutput(config, callback)
 		},
