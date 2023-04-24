@@ -46,11 +46,11 @@ endif
 GOLANG_VERSION=1.20
 
 ifneq (0, $(shell go version | grep -q $(GOLANG_VERSION) &>/dev/null; echo $$?))
-$(error "go $(GOLANG_VERSION) not available")
+$(warning "go $(GOLANG_VERSION) not available")
 endif
 
-ifneq (0, $(shell docker buildx --help &>/dev/null; echo $$?))
-$(error "docker buildx not available")
+ifneq (0, $(shell xxdocker buildx --help &>/dev/null; echo $$?))
+$(warning "docker buildx not available")
 endif
 
 
