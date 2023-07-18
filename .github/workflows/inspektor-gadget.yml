@@ -341,7 +341,8 @@ jobs:
       with:
         context: /home/runner/work/inspektor-gadget/inspektor-gadget/
         file: /home/runner/work/inspektor-gadget/inspektor-gadget/Dockerfiles/gadget-${{ matrix.type }}.Dockerfile
-        outputs: type=registry,name=${{ steps.set-repo-determine-image-tag.outputs.container-repo }},push=true,push-by-digest=true
+        push: true
+        outputs: type=image,name=${{ steps.set-repo-determine-image-tag.outputs.container-repo }},annotation-index.org.opencontainers.image.description=Inspektor Gadget is a collection of tools (or gadgets) to debug and inspect Kubernetes resources and applications. This image is used as a long-running DaemonSet in Kubernetes via the kubectl-gadget deploy command or via the Helm charts. This is the ${{ matrix.type }} flavor (default flavor includes both bcc-based tools and CO-RE-based tools; core flavor includes only CO-RE-based tools).
         cache-from: type=local,src=/tmp/.buildx-cache-new
         platforms: ${{ matrix.os }}/${{ matrix.platform }}
     - name: Save gadget ${{ matrix.type }} ${{ matrix.os }} ${{ matrix.platform }} container image digest output
@@ -427,7 +428,8 @@ jobs:
       with:
         context: /home/runner/work/inspektor-gadget/inspektor-gadget/
         file: /home/runner/work/inspektor-gadget/inspektor-gadget/Dockerfiles/ig.Dockerfile
-        outputs: type=registry,name=${{ steps.set-repo-determine-image-tag.outputs.container-repo }},push=true,push-by-digest=true
+        push: true
+        outputs: type=image,name=${{ steps.set-repo-determine-image-tag.outputs.container-repo }},push-by-digest=true,annotation-index.org.opencontainers.image.description=Inspektor Gadget is a collection of tools (or gadgets) to debug and inspect Kubernetes resources and applications. This image only includes the ig binary (a standalone tool to run the gadgets).
         cache-from: type=local,src=/tmp/.buildx-cache-new
         platforms: ${{ matrix.os }}/${{ matrix.platform }}
     - name: Save ig ${{ matrix.os }} ${{ matrix.platform }} container image digest output
