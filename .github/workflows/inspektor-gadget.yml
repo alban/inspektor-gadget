@@ -429,7 +429,8 @@ jobs:
         context: /home/runner/work/inspektor-gadget/inspektor-gadget/
         file: /home/runner/work/inspektor-gadget/inspektor-gadget/Dockerfiles/ig.Dockerfile
         push: true
-        outputs: type=image,name=${{ steps.set-repo-determine-image-tag.outputs.container-repo }},push-by-digest=true,annotation-index.org.opencontainers.image.description=Inspektor Gadget is a collection of tools (or gadgets) to debug and inspect Kubernetes resources and applications. This image only includes the ig binary (a standalone tool to run the gadgets).
+        outputs: type=image,name=${{ steps.set-repo-determine-image-tag.outputs.container-repo }},push-by-digest=true,name-canonical=true
+        # annotation-index.org.opencontainers.image.description=Inspektor Gadget is a collection of tools (or gadgets) to debug and inspect Kubernetes resources and applications. This image only includes the ig binary (a standalone tool to run the gadgets).
         cache-from: type=local,src=/tmp/.buildx-cache-new
         platforms: ${{ matrix.os }}/${{ matrix.platform }}
     - name: Save ig ${{ matrix.os }} ${{ matrix.platform }} container image digest output
@@ -547,10 +548,30 @@ jobs:
           co-re: false
       - name: Publish the manifest list
         run: |
+          set -x
           docker buildx imagetools create \
             -t ${{ steps.set-repo-determine-image-tag.outputs.container-repo }}:${{ steps.set-repo-determine-image-tag.outputs.image-tag }} \
+            --dry-run \
+            ${{ steps.set-repo-determine-image-tag.outputs.container-repo }}@${{ needs.build-ig-container-images.outputs.digest-amd64 }} \
+            ${{ steps.set-repo-determine-image-tag.outputs.container-repo }}@${{ needs.build-ig-container-images.outputs.digest-arm64 }} \
+            > descr1.json
+          cat descr1.json
+          IMG="${{ steps.set-repo-determine-image-tag.outputs.container-repo }}"
+          DIGEST1="$(cat descr1.json | jq -r '.manifests[0].digest')"
+          echo "DIGEST1: $DIGEST1"
+          DIGEST2="$(docker buildx imagetools inspect --raw $IMG@$DIGEST1 | jq -r '.config.digest')"
+          echo "DIGEST2: $DIGEST2"
+          LABELS="$(docker buildx imagetools inspect --raw $IMG@$DIGEST2 | jq '.config.Labels')"
+          echo "LABELS: $LABELS"
+          jq '. += {"annotations": '"$LABELS"'}' < descr1.json > descr.json
+          cat descr.json
+
+          docker buildx imagetools create \
+            -t ${{ steps.set-repo-determine-image-tag.outputs.container-repo }}:${{ steps.set-repo-determine-image-tag.outputs.image-tag }} \
+            -f descr.json \
             ${{ steps.set-repo-determine-image-tag.outputs.container-repo }}@${{ needs.build-ig-container-images.outputs.digest-amd64 }} \
             ${{ steps.set-repo-determine-image-tag.outputs.container-repo }}@${{ needs.build-ig-container-images.outputs.digest-arm64 }}
+
 
   build-helper-images:
     # level: 0
