@@ -271,6 +271,7 @@ func FixBpfKtimeGetBootNs(programSpecs map[string]*ebpf.ProgramSpec) {
 // Maps and Programs into the kernel
 func LoadeBPFSpec(
 	mountnsMap *ebpf.Map,
+	_ *ebpf.Map,
 	spec *ebpf.CollectionSpec,
 	consts map[string]interface{},
 	objs interface{},
