@@ -47,12 +47,20 @@ const (
 	BpfKtimeGetBootNsFuncID = 125
 
 	// Constant used to enable filtering by mount namespace inode id in eBPF.
-	// Keep in syn with variable defined in pkg/gadgets/common/mntns_filter.h.
+	// Keep in sync with variable defined in pkg/gadgets/common/mntns_filter.h.
 	FilterByMntNsName = "gadget_filter_by_mntns"
 
 	// Name of the map that stores the mount namespace inode id to filter on.
-	// Keep in syn with name used in pkg/gadgets/common/mntns_filter.h.
+	// Keep in sync with name used in pkg/gadgets/common/mntns_filter.h.
 	MntNsFilterMapName = "gadget_mntns_filter_map"
+
+	// Constant used to enable filtering by cgroup id in eBPF.
+	// Keep in sync with variable defined in pkg/gadgets/common/cgroup_filter.h.
+	FilterByCgroupName = "gadget_filter_by_cgroup"
+
+	// Name of the map that stores the cgroup inode id to filter on.
+	// Keep in sync with name used in pkg/gadgets/common/cgroup_filter.h.
+	CgroupFilterMapName = "gadget_cgroup_filter_map"
 )
 
 // CloseLink closes l if it's not nil and returns nil
@@ -271,7 +279,7 @@ func FixBpfKtimeGetBootNs(programSpecs map[string]*ebpf.ProgramSpec) {
 // Maps and Programs into the kernel
 func LoadeBPFSpec(
 	mountnsMap *ebpf.Map,
-	_ *ebpf.Map,
+	cgroupIdMap *ebpf.Map,
 	spec *ebpf.CollectionSpec,
 	consts map[string]interface{},
 	objs interface{},
@@ -281,16 +289,20 @@ func LoadeBPFSpec(
 	mapReplacements := map[string]*ebpf.Map{}
 	filterByMntNs := false
 
-	if mountnsMap != nil {
-		filterByMntNs = true
-		mapReplacements[MntNsFilterMapName] = mountnsMap
-	}
-
 	if consts == nil {
 		consts = map[string]interface{}{}
 	}
 
+	if mountnsMap != nil {
+		filterByMntNs = true
+		mapReplacements[MntNsFilterMapName] = mountnsMap
+	}
 	consts[FilterByMntNsName] = filterByMntNs
+
+	if cgroupIdMap != nil {
+		mapReplacements[CgroupFilterMapName] = cgroupIdMap
+		consts[FilterByCgroupName] = true
+	}
 
 	if err := spec.RewriteConstants(consts); err != nil {
 		return fmt.Errorf("rewriting constants: %w", err)

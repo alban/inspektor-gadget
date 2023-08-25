@@ -377,7 +377,7 @@ type WithMountNsID struct {
 
 type WithCgroupID struct {
 	CgroupID uint64 `json:"cgroupid,omitempty" column:"CgroupID,hide"`
-	Sdname   string `json:"sdname,omitempty" column:"sdname,minWidth:20"`
+	Sdname   string `json:"sdname,omitempty" column:"sdname,minWidth:20" columnTags:"param:show-systemd"`
 }
 
 func (e *WithCgroupID) GetCgroupID() uint64 {

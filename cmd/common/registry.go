@@ -420,6 +420,16 @@ func buildCommandFromGadget(
 						}
 					}
 				}
+				for _, opParams := range operatorsParamsCollection {
+					for paramName := range opParams.ParamMap() {
+						param := opParams.Get(paramName)
+						if param.TypeHint == params.TypeBool {
+							if !param.AsBool() {
+								hiddenTags = append(hiddenTags, "param:"+strings.ToLower(param.Key))
+							}
+						}
+					}
+				}
 				requestedColumns = parser.GetDefaultColumns(hiddenTags...)
 			}
 
