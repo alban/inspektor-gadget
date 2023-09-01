@@ -1,5 +1,5 @@
 GADGETS = \
-	trace_exec_x86.bpf.o trace_exec_arm64.bpf.o \
+	trace_exec_x86.bpf.o trace_exec_arm64.bpf.o trace_exec.wasm \
 	trace_open_x86.bpf.o trace_open_arm64.bpf.o \
 	trace_tcpconnect_x86.bpf.o trace_tcpconnect_arm64.bpf.o \
 	trace_tcpretrans_x86.bpf.o trace_tcpretrans_arm64.bpf.o \
@@ -53,6 +53,9 @@ all: $(GADGETS)
 		-I pkg/gadgets/common/ \
 		-I pkg/gadgets/internal/socketenricher/bpf \
 		-o gadgets/$@"
+
+%.wasm : %.go
+	tinygo build -o $@ -target=wasi --no-debug $^
 
 clean:
 	rm *.o
