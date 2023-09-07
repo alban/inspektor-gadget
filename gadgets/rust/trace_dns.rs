@@ -24,7 +24,7 @@ fn column_name(payload: &[u8]) -> wapc::CallResult {
 
     if str == "wikipedia.org." {
         wapc::console_log(&format!(
-            "In WASM implemented in Rust: thank you for visiting Wikipedia: {}",
+            "In WASM implemented in Rust: thank you for visiting {}",
             str
         ));
     }
