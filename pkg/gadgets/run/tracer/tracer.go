@@ -31,6 +31,8 @@ import (
 	"github.com/cilium/ebpf/perf"
 	"github.com/cilium/ebpf/ringbuf"
 	beespec "github.com/solo-io/bumblebee/pkg/spec"
+	"github.com/wapc/wapc-go"
+	"github.com/wapc/wapc-go/engines/wazero"
 	orascontent "oras.land/oras-go/pkg/content"
 	"oras.land/oras-go/pkg/oras"
 
@@ -59,11 +61,14 @@ type Config struct {
 	RegistryAuth orascontent.RegistryOptions
 	ProgLocation string
 	ProgContent  []byte
+	WasmContent  []byte
 	MountnsMap   *ebpf.Map
 }
 
 type Tracer struct {
 	*networktracer.Tracer[types.Event]
+
+	gadgetCtx gadgets.GadgetContext
 
 	config        *Config
 	eventCallback func(*types.Event)
@@ -81,15 +86,19 @@ type Tracer struct {
 	useAttacherInterface bool
 
 	links []link.Link
+
+	wasmModule   wapc.Module
+	wasmInstance wapc.Instance
 }
 
 func (g *GadgetDesc) NewInstance() (gadgets.Gadget, error) {
 	networkTracer, err := networktracer.NewTracer(
 		types.Base,
-		func(rawSample []byte, netns uint64) (*types.Event, error) {
-			fmt.Printf("rawSample: %v, netns=%d\n", rawSample, netns)
-			return &types.Event{}, nil
-		},
+		nil,
+		//func(rawSample []byte, netns uint64) (*types.Event, error) {
+		//	fmt.Printf("rawSample: %v, netns=%d\n", rawSample, netns)
+		//	return &types.Event{}, nil
+		//},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating network tracer: %w", err)
@@ -103,6 +112,7 @@ func (g *GadgetDesc) NewInstance() (gadgets.Gadget, error) {
 }
 
 func (t *Tracer) Init(gadgetCtx gadgets.GadgetContext) error {
+	t.gadgetCtx = gadgetCtx
 	return nil
 }
 
@@ -133,6 +143,9 @@ func (t *Tracer) getByobEbpfPackage() (*beespec.EbpfPackage, error) {
 }
 
 func (t *Tracer) Stop() {
+	t.wasmModule.Close(context.Background())
+	t.wasmInstance.Close(context.Background())
+
 	if t.collection != nil {
 		t.collection.Close()
 		t.collection = nil
@@ -154,8 +167,30 @@ func (t *Tracer) Stop() {
 }
 
 func (t *Tracer) installTracer() error {
-	// Load the spec
+	// Load wasm module
+	ctx := context.Background()
+	engine := wazero.Engine()
+
+	host := func(_ context.Context, binding, namespace, operation string, payload []byte) ([]byte, error) {
+		panic("HostCallHandler not implemented")
+	}
 	var err error
+	t.wasmModule, err = engine.New(ctx, host, t.config.WasmContent, &wapc.ModuleConfig{
+		Logger: func(msg string) {
+			t.gadgetCtx.Logger().Info(msg)
+		},
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+	})
+	if err != nil {
+		return fmt.Errorf("creating wasm module: %w", err)
+	}
+	t.wasmInstance, err = t.wasmModule.Instantiate(ctx)
+	if err != nil {
+		return fmt.Errorf("instantiating wasm module: %w", err)
+	}
+
+	// Load the spec
 	t.spec, err = loadSpec(t.config.ProgContent)
 	if err != nil {
 		return err
@@ -290,6 +325,14 @@ func (t *Tracer) run(gadgetCtx gadgets.GadgetContext) {
 
 	endpointDefs := []endpointDef{}
 
+	type wasmStringDef struct {
+		name  string
+		start uint32
+		size  uint32
+	}
+
+	wasmStringDefs := []wasmStringDef{}
+
 	// The same same data structure is always sent, so we can precalculate the offsets for
 	// different fields like mount ns id, endpoints, etc.
 	for _, member := range typ.Members {
@@ -340,6 +383,44 @@ func (t *Tracer) run(gadgetCtx gadgets.GadgetContext) {
 			}
 			e := endpointDef{name: member.Name, start: member.Offset.Bytes(), typ: L4}
 			endpointDefs = append(endpointDefs, e)
+
+		case gadgets.WasmStringTypeName:
+			typDef, ok := member.Type.(*btf.Typedef)
+			if !ok {
+				continue
+			}
+
+			underlying, err := getUnderlyingType(typDef)
+			if err != nil {
+				continue
+			}
+
+			arrayM, ok := underlying.(*btf.Array)
+			if !ok {
+				continue
+			}
+			memberTypedef, ok := arrayM.Type.(*btf.Typedef)
+			var underlyingM btf.Type
+			if ok {
+				underlyingM, err = getUnderlyingType(memberTypedef)
+				if err != nil {
+					continue
+				}
+			} else {
+				underlyingM = arrayM.Type
+			}
+
+			arrayT, ok := underlyingM.(*btf.Int)
+			if !ok {
+				continue
+			}
+
+			w := wasmStringDef{
+				name:  member.Name,
+				start: member.Offset.Bytes(),
+				size:  arrayM.Nelems * arrayT.Size,
+			}
+			wasmStringDefs = append(wasmStringDefs, w)
 		}
 	}
 
@@ -435,6 +516,19 @@ func (t *Tracer) run(gadgetCtx gadgets.GadgetContext) {
 			}
 		}
 
+		wasmStrings := []string{}
+		for _, wStr := range wasmStringDefs {
+			inputBuffer := make([]byte, wStr.size)
+			copy(inputBuffer, data[wStr.start:wStr.start+wStr.size])
+			result, err := t.wasmInstance.Invoke(t.gadgetCtx.Context(),
+				"column_"+wStr.name, []byte(inputBuffer))
+			if err != nil {
+				wasmStrings = append(wasmStrings, fmt.Errorf("invoking wasm function: %w", err).Error())
+				continue
+			}
+			wasmStrings = append(wasmStrings, string(result))
+		}
+
 		event := types.Event{
 			Event: eventtypes.Event{
 				Type: eventtypes.NORMAL,
@@ -443,6 +537,7 @@ func (t *Tracer) run(gadgetCtx gadgets.GadgetContext) {
 			RawData:       data,
 			L3Endpoints:   l3endpoints,
 			L4Endpoints:   l4endpoints,
+			WasmStrings:   wasmStrings,
 		}
 
 		t.eventCallback(&event)
@@ -467,6 +562,10 @@ func (t *Tracer) Run(gadgetCtx gadgets.GadgetContext) error {
 			return fmt.Errorf("download byob ebpf package: %w", err)
 		}
 		t.config.ProgContent = byobEbpfPackage.ProgramFileBytes
+	}
+
+	if len(params.Get(ParamWasm).AsBytes()) != 0 {
+		t.config.WasmContent = params.Get(ParamWasm).AsBytes()
 	}
 
 	if err := t.installTracer(); err != nil {

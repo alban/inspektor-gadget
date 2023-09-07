@@ -54,7 +54,10 @@ require (
 	github.com/spf13/viper v1.16.0
 	github.com/stretchr/testify v1.8.4
 	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635
+	github.com/tetratelabs/wazero v1.5.0
 	github.com/tklauser/numcpus v0.6.1
+	github.com/wapc/wapc-go v0.6.1
+	github.com/wapc/wapc-guest-tinygo v0.3.3
 	go.opentelemetry.io/otel v1.17.0
 	go.opentelemetry.io/otel/exporters/prometheus v0.40.0
 	go.opentelemetry.io/otel/metric v1.17.0
@@ -77,6 +80,7 @@ require (
 	github.com/Masterminds/sprig/v3 v3.2.3 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/Microsoft/hcsshim v0.10.0 // indirect
+	github.com/Workiva/go-datastructures v1.0.53 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/containerd/cgroups/v3 v3.0.2 // indirect
@@ -160,7 +164,6 @@ require (
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/subosito/gotenv v1.4.2 // indirect
-	github.com/tetratelabs/wazero v1.5.0 // indirect
 	github.com/ulikunitz/xz v0.5.11 // indirect
 	github.com/vbatts/tar-split v0.11.3 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect

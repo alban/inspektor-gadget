@@ -35,6 +35,7 @@ type Event struct {
 
 	L3Endpoints []L3Endpoint `json:"l3endpoints,omitempty"`
 	L4Endpoints []L4Endpoint `json:"l4endpoints,omitempty"`
+	WasmStrings []string     `json:"wasm_strings,omitempty"`
 
 	// Raw event sent by the ebpf program
 	RawData []byte `json:"raw_data,omitempty"`

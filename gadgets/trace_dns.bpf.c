@@ -27,6 +27,8 @@
 // answers won't be sent to userspace.
 #define MAX_ADDR_ANSWERS 1
 
+typedef __u8 wasm_string_t[MAX_DNS_NAME];
+
 struct event_t {
 	// Keep netns at the top: networktracer depends on it
 	__u32 netns;
@@ -53,7 +55,7 @@ struct event_t {
 
 	__u64 latency_ns; // Set only if qr is 1 (response) and pkt_type is 0 (Host).
 
-	__u8 name[MAX_DNS_NAME];
+	wasm_string_t name;
 
 	__u16 ancount;
 	__u16 anaddrcount;
