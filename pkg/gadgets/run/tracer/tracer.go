@@ -91,6 +91,12 @@ type Tracer struct {
 	wasmInstance wapc.Instance
 }
 
+type wasmHostCallContext struct {
+	drop        bool
+	l3Endpoints []types.L3Endpoint
+	l4Endpoints []types.L4Endpoint
+}
+
 func (g *GadgetDesc) NewInstance() (gadgets.Gadget, error) {
 	networkTracer, err := networktracer.NewTracer(
 		types.Base,
@@ -171,8 +177,29 @@ func (t *Tracer) installTracer() error {
 	ctx := context.Background()
 	engine := wazero.Engine()
 
-	host := func(_ context.Context, binding, namespace, operation string, payload []byte) ([]byte, error) {
-		panic("HostCallHandler not implemented")
+	host := func(ctx context.Context, binding, namespace, operation string, payload []byte) ([]byte, error) {
+		cookie := ctx.Value("event").(*wasmHostCallContext)
+		switch binding {
+		case "ig":
+			switch namespace {
+			case "event":
+				switch operation {
+				case "drop":
+					cookie.drop = true
+					return nil, nil
+				case "lookup_endpoints":
+					for _, e := range cookie.l4Endpoints {
+						if e.Name == string(payload) {
+							return []byte(fmt.Sprintf("%d", e.Port)), nil
+						}
+					}
+					return nil, fmt.Errorf("endpoint %q not found", string(payload))
+				}
+			}
+		}
+		t.gadgetCtx.Logger().Warnf("HostCall for %s/%s/%s not implemented", binding, namespace, operation)
+
+		return nil, fmt.Errorf("HostCall for %s/%s/%s not implemented", binding, namespace, operation)
 	}
 	var err error
 	t.wasmModule, err = engine.New(ctx, host, t.config.WasmContent, &wapc.ModuleConfig{
@@ -517,10 +544,19 @@ func (t *Tracer) run(gadgetCtx gadgets.GadgetContext) {
 		}
 
 		wasmStrings := []string{}
+		cookie := wasmHostCallContext{
+			l3Endpoints: l3endpoints,
+			l4Endpoints: l4endpoints,
+		}
 		for _, wStr := range wasmStringDefs {
 			inputBuffer := make([]byte, wStr.size)
 			copy(inputBuffer, data[wStr.start:wStr.start+wStr.size])
-			result, err := t.wasmInstance.Invoke(t.gadgetCtx.Context(),
+
+			ctx := context.WithValue(
+				t.gadgetCtx.Context(),
+				"event",
+				&cookie)
+			result, err := t.wasmInstance.Invoke(ctx,
 				"column_"+wStr.name, []byte(inputBuffer))
 			if err != nil {
 				wasmStrings = append(wasmStrings, fmt.Errorf("invoking wasm function: %w", err).Error())
@@ -528,19 +564,20 @@ func (t *Tracer) run(gadgetCtx gadgets.GadgetContext) {
 			}
 			wasmStrings = append(wasmStrings, string(result))
 		}
+		if !cookie.drop {
+			event := types.Event{
+				Event: eventtypes.Event{
+					Type: eventtypes.NORMAL,
+				},
+				WithMountNsID: eventtypes.WithMountNsID{MountNsID: mtn_ns_id},
+				RawData:       data,
+				L3Endpoints:   l3endpoints,
+				L4Endpoints:   l4endpoints,
+				WasmStrings:   wasmStrings,
+			}
 
-		event := types.Event{
-			Event: eventtypes.Event{
-				Type: eventtypes.NORMAL,
-			},
-			WithMountNsID: eventtypes.WithMountNsID{MountNsID: mtn_ns_id},
-			RawData:       data,
-			L3Endpoints:   l3endpoints,
-			L4Endpoints:   l4endpoints,
-			WasmStrings:   wasmStrings,
+			t.eventCallback(&event)
 		}
-
-		t.eventCallback(&event)
 	}
 }
 

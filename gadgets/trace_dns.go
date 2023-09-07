@@ -10,7 +10,6 @@ func main() {
 	wapc.RegisterFunctions(wapc.Functions{
 		"column_name": column_name,
 	})
-
 }
 
 func column_name(payload []byte) ([]byte, error) {
@@ -28,6 +27,19 @@ func column_name(payload []byte) ([]byte, error) {
 		}
 		i += length
 	}
-	//wapc.ConsoleLog(fmt.Sprintf("column_name returns %q\n", string(str)))
+	if string(str) == "wikipedia.org." {
+		wapc.ConsoleLog("The WASM module thanks you for visiting wikipedia.org.")
+	}
+	if string(str) == "example.com." {
+		wapc.HostCall("ig", "event", "drop", []byte("example.com not allowed"))
+		wapc.ConsoleLog("The WASM module is dropping example.com.")
+
+		dstEndpoint, err := wapc.HostCall("ig", "event", "lookup_endpoints", []byte("dst"))
+		if err != nil {
+			wapc.ConsoleLog(fmt.Sprintf("The WASM module failed to lookup endpoint dst: %s\n", err))
+			return nil, nil
+		}
+		wapc.ConsoleLog(fmt.Sprintf("The WASM module looked up endpoint dst: %q\n", string(ret)))
+	}
 	return []byte(str), nil
 }
