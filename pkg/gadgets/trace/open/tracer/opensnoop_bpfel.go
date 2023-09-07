@@ -19,6 +19,7 @@ type opensnoopEvent struct {
 	Gid       uint32
 	_         [4]byte
 	MntnsId   uint64
+	CgroupId  uint64
 	Ret       int32
 	Flags     int32
 	Mode      uint16
@@ -79,10 +80,11 @@ type opensnoopProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type opensnoopMapSpecs struct {
-	Bufs                 *ebpf.MapSpec `ebpf:"bufs"`
-	Events               *ebpf.MapSpec `ebpf:"events"`
-	GadgetMntnsFilterMap *ebpf.MapSpec `ebpf:"gadget_mntns_filter_map"`
-	Start                *ebpf.MapSpec `ebpf:"start"`
+	Bufs                  *ebpf.MapSpec `ebpf:"bufs"`
+	Events                *ebpf.MapSpec `ebpf:"events"`
+	GadgetCgroupFilterMap *ebpf.MapSpec `ebpf:"gadget_cgroup_filter_map"`
+	GadgetMntnsFilterMap  *ebpf.MapSpec `ebpf:"gadget_mntns_filter_map"`
+	Start                 *ebpf.MapSpec `ebpf:"start"`
 }
 
 // opensnoopObjects contains all objects after they have been loaded into the kernel.
@@ -104,16 +106,18 @@ func (o *opensnoopObjects) Close() error {
 //
 // It can be passed to loadOpensnoopObjects or ebpf.CollectionSpec.LoadAndAssign.
 type opensnoopMaps struct {
-	Bufs                 *ebpf.Map `ebpf:"bufs"`
-	Events               *ebpf.Map `ebpf:"events"`
-	GadgetMntnsFilterMap *ebpf.Map `ebpf:"gadget_mntns_filter_map"`
-	Start                *ebpf.Map `ebpf:"start"`
+	Bufs                  *ebpf.Map `ebpf:"bufs"`
+	Events                *ebpf.Map `ebpf:"events"`
+	GadgetCgroupFilterMap *ebpf.Map `ebpf:"gadget_cgroup_filter_map"`
+	GadgetMntnsFilterMap  *ebpf.Map `ebpf:"gadget_mntns_filter_map"`
+	Start                 *ebpf.Map `ebpf:"start"`
 }
 
 func (m *opensnoopMaps) Close() error {
 	return _OpensnoopClose(
 		m.Bufs,
 		m.Events,
+		m.GadgetCgroupFilterMap,
 		m.GadgetMntnsFilterMap,
 		m.Start,
 	)
