@@ -23,7 +23,9 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/btf"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
+	"oras.land/oras-go/v2"
 	k8syaml "sigs.k8s.io/yaml"
 
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/columns"
@@ -32,6 +34,7 @@ import (
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadgets"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadgets/run/types"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/logger"
+	"github.com/inspektor-gadget/inspektor-gadget/pkg/oci_helper"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/params"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/parser"
 	eventtypes "github.com/inspektor-gadget/inspektor-gadget/pkg/types"
@@ -42,6 +45,7 @@ const (
 	ProgramContent  = "prog"
 	ParamDefinition = "definition"
 	ParamWasm       = "wasm"
+	OCIImage        = "oci-image"
 	printMapPrefix  = "print_"
 )
 
@@ -84,11 +88,90 @@ func (g *GadgetDesc) ParamDescs() params.ParamDescs {
 			Description: "Wasm user space module",
 			TypeHint:    params.TypeBytes,
 		},
+		// Hardcoded for now
+		{
+			Key:          "authfile",
+			Title:        "Auth file",
+			DefaultValue: oci_helper.DefaultAuthFile,
+			TypeHint:     params.TypeString,
+		},
 	}
 }
 
 func (g *GadgetDesc) Parser() parser.Parser {
 	return nil
+}
+
+func getProgAndDefinition(params *params.Params, args []string) ([]byte, []byte, error) {
+	// First check if things are passed as arguments
+	progContent := params.Get(ProgramContent).AsBytes()
+	definitionBytes := params.Get(ParamDefinition).AsBytes()
+
+	// sanity checks to be sure --prog and --definition aren't used with an image
+	if len(args) != 0 && (len(progContent) != 0 || len(definitionBytes) != 0) {
+		return nil, nil, fmt.Errorf("arguments are not allowed when program or definition are provided")
+	}
+
+	if len(progContent) != 0 && len(definitionBytes) != 0 {
+		return progContent, definitionBytes, nil
+	}
+
+	if len(progContent) != 0 || len(definitionBytes) != 0 {
+		return nil, nil, fmt.Errorf("both program and definition must be provided")
+	}
+
+	// Fallback to image
+	if len(args) != 1 {
+		return nil, nil, fmt.Errorf("one argument expected: received %d", len(args))
+	}
+	image, err := oci_helper.NormalizeImage(args[0])
+	if err != nil {
+		return nil, nil, fmt.Errorf("normalize image: %w", err)
+	}
+
+	var imageStore oras.Target
+	imageStore, err = oci_helper.GetLocalOciStore()
+	if err != nil {
+		logrus.Debugf("get oci store: %s", err)
+		imageStore = oci_helper.GetMemoryStore()
+	}
+	authOpts := oci_helper.AuthOptions{
+		AuthFile: params.Get("authfile").AsString(),
+	}
+
+	prog, err := oci_helper.GetEbpfProgram(imageStore, &authOpts, image)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get ebpf program: %w", err)
+	}
+	if len(prog) == 0 {
+		return nil, nil, fmt.Errorf("no program found in image")
+	}
+
+	def, err := oci_helper.GetDefinition(imageStore, &authOpts, image)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get definition: %w", err)
+	}
+	if len(def) == 0 {
+		return nil, nil, fmt.Errorf("no definition found in image")
+	}
+
+	return prog, def, nil
+}
+
+func (g *GadgetDesc) GetGadgetInfo(params *params.Params, args []string) (*types.GadgetInfo, error) {
+	progContent, definitionBytes, err := getProgAndDefinition(params, args)
+	if err != nil {
+		return nil, fmt.Errorf("get ebpf program and definition: %w", err)
+	}
+
+	ret := &types.GadgetInfo{
+		ProgContent: progContent,
+	}
+	if err := yaml.Unmarshal(definitionBytes, &ret.GadgetDefinition); err != nil {
+		return nil, fmt.Errorf("unmarshaling definition: %w", err)
+	}
+
+	return ret, nil
 }
 
 func getUnderlyingType(tf *btf.Typedef) (btf.Type, error) {
@@ -109,7 +192,8 @@ func loadSpec(progContent []byte) (*ebpf.CollectionSpec, error) {
 	return spec, err
 }
 
-func getPrintMap(spec *ebpf.CollectionSpec) (*ebpf.MapSpec, error) {
+// getPrintMap returns the first map with a "print_" prefix. If not found returns nil.
+func getPrintMap(spec *ebpf.CollectionSpec) *ebpf.MapSpec {
 	for _, m := range spec.Maps {
 		if m.Type != ebpf.RingBuf && m.Type != ebpf.PerfEventArray {
 			continue
@@ -119,31 +203,30 @@ func getPrintMap(spec *ebpf.CollectionSpec) (*ebpf.MapSpec, error) {
 			continue
 		}
 
-		return m, nil
+		return m
 	}
 
-	return nil, fmt.Errorf("no BPF map with %q prefix found", printMapPrefix)
+	return nil
 }
 
-func getValueStructBTF(progContent []byte) (*btf.Struct, error) {
+func getEventTypeBTF(progContent []byte) (*btf.Struct, error) {
 	spec, err := loadSpec(progContent)
 	if err != nil {
 		return nil, err
 	}
 
-	m, err := getPrintMap(spec)
-	if err != nil {
-		return nil, err
+	// Look for gadgets with a "print_" map
+	printMap := getPrintMap(spec)
+	if printMap != nil {
+		valueStruct, ok := printMap.Value.(*btf.Struct)
+		if !ok {
+			return nil, fmt.Errorf("BPF map %q does not have BTF info for values", printMap.Name)
+		}
+
+		return valueStruct, nil
 	}
 
-	var valueStruct *btf.Struct
-	var ok bool
-	valueStruct, ok = m.Value.(*btf.Struct)
-	if !ok {
-		return nil, fmt.Errorf("BPF map %q does not have BTF info for values", m.Name)
-	}
-
-	return valueStruct, nil
+	return nil, fmt.Errorf("the gadget doesn't provide any compatible way to show information")
 }
 
 func getType(typ btf.Type) reflect.Type {
@@ -268,28 +351,14 @@ func addL4EndpointColumns(
 	})
 }
 
-func (g *GadgetDesc) getColumns(params *params.Params, args []string) (*columns.Columns[types.Event], error) {
-	if len(args) != 0 {
-		return nil, fmt.Errorf("no arguments expected: received %d", len(args))
-	}
-	progContent := params.Get(ProgramContent).AsBytes()
-	definitionBytes := params.Get(ParamDefinition).AsBytes()
-	if len(definitionBytes) == 0 {
-		return nil, fmt.Errorf("no definition provided")
-	}
-
-	valueStruct, err := getValueStructBTF(progContent)
+func (g *GadgetDesc) getColumns(prepareResult *types.GadgetInfo) (*columns.Columns[types.Event], error) {
+	gadgetDefinition := prepareResult.GadgetDefinition
+	eventType, err := getEventTypeBTF(prepareResult.ProgContent)
 	if err != nil {
 		return nil, fmt.Errorf("getting value struct: %w", err)
 	}
 
 	cols := types.GetColumns()
-
-	var gadgetDefinition types.GadgetDefinition
-
-	if err := yaml.Unmarshal(definitionBytes, &gadgetDefinition); err != nil {
-		return nil, fmt.Errorf("unmarshaling definition: %w", err)
-	}
 
 	colAttrs := map[string]columns.Attributes{}
 	for _, col := range gadgetDefinition.ColumnsAttrs {
@@ -302,7 +371,7 @@ func (g *GadgetDesc) getColumns(params *params.Params, args []string) (*columns.
 	l4endpointCounter := 0
 	wasmStringCounter := 0
 
-	for _, member := range valueStruct.Members {
+	for _, member := range eventType.Members {
 		member := member
 
 		attrs, ok := colAttrs[member.Name]
@@ -401,121 +470,25 @@ func (g *GadgetDesc) getColumns(params *params.Params, args []string) (*columns.
 	return cols, nil
 }
 
-//func (g *GadgetDesc) AddWasmColumns(params *params.Params, cols *columns.Columns[types.Event]) error {
-//	wasmProg := params.Get(ParamWasm).AsBytes()
-//
-//	// Choose the context to use for function calls.
-//	ctx := context.Background()
-//
-//	// Create a new WebAssembly Runtime.
-//	r := wazero.NewRuntime(ctx)
-//	// TODO: When to close?
-//	//defer r.Close(ctx) // This closes everything this Runtime created.
-//
-//	// Note: testdata/greet.go doesn't use WASI, but TinyGo needs it to
-//	// implement functions such as panic.
-//	wasi_snapshot_preview1.MustInstantiate(ctx, r)
-//
-//	// Instantiate a WebAssembly module that imports the "log" function defined
-//	// in "env" and exports "memory" and functions we'll use in this example.
-//	mod, err := r.Instantiate(ctx, wasmProg)
-//	if err != nil {
-//		return fmt.Errorf("instantiating module: %w", err)
-//	}
-//
-//	// These are undocumented, but exported. See tinygo-org/tinygo#2788
-//	malloc := mod.ExportedFunction("malloc")
-//	free := mod.ExportedFunction("free")
-//
-//	defs := mod.ExportedFunctionDefinitions()
-//
-//	for name, _ := range defs {
-//		if !strings.HasPrefix(name, "column_") {
-//			continue
-//		}
-//
-//		f := mod.ExportedFunction(name)
-//
-//		attrs := columns.Attributes{
-//			Name:    strings.TrimPrefix(name, "column_"),
-//			Width:   50,
-//			Visible: true,
-//			Order:   2000,
-//		}
-//
-//		err := cols.AddColumn(attrs, func(ev *types.Event) any {
-//			data := ev.RawData
-//			lenData := uint64(len(data))
-//
-//			results, err := malloc.Call(ctx, lenData)
-//			if err != nil {
-//				fmt.Printf("error: %v\n", err)
-//				return ""
-//			}
-//			inPtr := results[0]
-//			// This pointer is managed by TinyGo, but TinyGo is unaware of external usage.
-//			// So, we have to free it when finished
-//			defer free.Call(ctx, inPtr)
-//
-//			// The pointer is a linear memory offset, which is where we write the name.
-//			if !mod.Memory().Write(uint32(inPtr), data) {
-//				fmt.Printf("Memory.Write(%d, %d) out of range of memory size %d\n",
-//					inPtr, lenData, mod.Memory().Size())
-//				return ""
-//			}
-//
-//			// Finally, we get the greeting message "greet" printed. This shows how to
-//			// read-back something allocated by TinyGo.
-//			outPtrSize, err := f.Call(ctx, inPtr, lenData)
-//			if err != nil {
-//				fmt.Printf("f.Call error: %v\n", err)
-//				return ""
-//			}
-//
-//			outPtr := uint32(outPtrSize[0] >> 32)
-//			outSize := uint32(outPtrSize[0])
-//
-//			// This pointer is managed by TinyGo, but TinyGo is unaware of external usage.
-//			// So, we have to free it when finished
-//			if outPtr != 0 {
-//				defer free.Call(ctx, uint64(outPtr))
-//			}
-//
-//			// The pointer is a linear memory offset, which is where we write the name.
-//			bytes, ok := mod.Memory().Read(outPtr, outSize)
-//			if !ok {
-//				fmt.Printf("Memory.Read(%d, %d) out of range of memory size %d\n",
-//					outPtr, outSize, mod.Memory().Size())
-//			}
-//
-//			return string(bytes)
-//		})
-//		if err != nil {
-//			return fmt.Errorf("adding column: %w", err)
-//		}
-//	}
-//
-//	return nil
-//}
-
-func (g *GadgetDesc) CustomParser(params *params.Params, args []string) (parser.Parser, error) {
-	cols, err := g.getColumns(params, args)
+func (g *GadgetDesc) CustomParser(result *types.GadgetInfo) (parser.Parser, error) {
+	cols, err := g.getColumns(result)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getting columns: %w", err)
 	}
+
 	return parser.NewParser[types.Event](cols), nil
 }
 
-func (g *GadgetDesc) customJsonParser(params *params.Params, args []string, options ...columns_json.Option) (*columns_json.Formatter[types.Event], error) {
-	cols, err := g.getColumns(params, args)
+func (g *GadgetDesc) customJsonParser(result *types.GadgetInfo, options ...columns_json.Option) (*columns_json.Formatter[types.Event], error) {
+	cols, err := g.getColumns(result)
 	if err != nil {
 		return nil, err
 	}
 	return columns_json.NewFormatter(cols.ColumnMap, options...), nil
 }
 
-func (g *GadgetDesc) JSONConverter(params *params.Params, printer gadgets.Printer) func(ev any) {
-	formatter, err := g.customJsonParser(params, []string{})
+func (g *GadgetDesc) JSONConverter(result *types.GadgetInfo, printer types.Printer) func(ev any) {
+	formatter, err := g.customJsonParser(result)
 	if err != nil {
 		printer.Logf(logger.WarnLevel, "creating json formatter: %s", err)
 		return nil
@@ -526,8 +499,8 @@ func (g *GadgetDesc) JSONConverter(params *params.Params, printer gadgets.Printe
 	}
 }
 
-func (g *GadgetDesc) JSONPrettyConverter(params *params.Params, printer gadgets.Printer) func(ev any) {
-	formatter, err := g.customJsonParser(params, []string{}, columns_json.WithPrettyPrint())
+func (g *GadgetDesc) JSONPrettyConverter(result *types.GadgetInfo, printer types.Printer) func(ev any) {
+	formatter, err := g.customJsonParser(result, columns_json.WithPrettyPrint())
 	if err != nil {
 		printer.Logf(logger.WarnLevel, "creating json formatter: %s", err)
 		return nil
@@ -538,8 +511,8 @@ func (g *GadgetDesc) JSONPrettyConverter(params *params.Params, printer gadgets.
 	}
 }
 
-func (g *GadgetDesc) YAMLConverter(params *params.Params, printer gadgets.Printer) func(ev any) {
-	formatter, err := g.customJsonParser(params, []string{})
+func (g *GadgetDesc) YAMLConverter(result *types.GadgetInfo, printer types.Printer) func(ev any) {
+	formatter, err := g.customJsonParser(result)
 	if err != nil {
 		printer.Logf(logger.WarnLevel, "creating json formatter: %s", err)
 		return nil

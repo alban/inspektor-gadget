@@ -30,11 +30,8 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
 	"github.com/cilium/ebpf/ringbuf"
-	beespec "github.com/solo-io/bumblebee/pkg/spec"
 	"github.com/wapc/wapc-go"
 	"github.com/wapc/wapc-go/engines/wazero"
-	orascontent "oras.land/oras-go/pkg/content"
-	"oras.land/oras-go/pkg/oras"
 
 	gadgetcontext "github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-context"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadgets"
@@ -58,7 +55,7 @@ type l4EndpointT struct {
 }
 
 type Config struct {
-	RegistryAuth orascontent.RegistryOptions
+	// RegistryAuth orascontent.RegistryOptions
 	ProgLocation string
 	ProgContent  []byte
 	WasmContent  []byte
@@ -75,13 +72,16 @@ type Tracer struct {
 
 	spec       *ebpf.CollectionSpec
 	collection *ebpf.Collection
+	// Type describing the format the gadget uses
+	eventType *btf.Struct
 
 	socketEnricher *socketenricher.SocketEnricher
 
-	valueStruct   *btf.Struct
+	valueStruct *btf.Struct
+
+	// Printers related
 	ringbufReader *ringbuf.Reader
 	perfReader    *perf.Reader
-	//printMapValueSize uint32
 
 	useAttacherInterface bool
 
@@ -126,28 +126,6 @@ func (t *Tracer) Init(gadgetCtx gadgets.GadgetContext) error {
 func (t *Tracer) Close() {
 }
 
-func (t *Tracer) getByobEbpfPackage() (*beespec.EbpfPackage, error) {
-	localRegistry := orascontent.NewMemory()
-
-	remoteRegistry, err := orascontent.NewRegistry(t.config.RegistryAuth)
-	if err != nil {
-		return nil, fmt.Errorf("create new oras registry: %w", err)
-	}
-
-	_, err = oras.Copy(
-		context.Background(),
-		remoteRegistry,
-		t.config.ProgLocation,
-		localRegistry,
-		t.config.ProgLocation,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("copy oras: %w", err)
-	}
-	byobClient := beespec.NewEbpfOCICLient()
-	return byobClient.Pull(context.Background(), t.config.ProgLocation, localRegistry)
-}
-
 func (t *Tracer) Stop() {
 	t.wasmModule.Close(context.Background())
 	t.wasmInstance.Close(context.Background())
@@ -170,6 +148,33 @@ func (t *Tracer) Stop() {
 	if t.socketEnricher != nil {
 		t.socketEnricher.Close()
 	}
+}
+
+func (t *Tracer) handlePrintMap() (*ebpf.MapSpec, error) {
+	// If the gadget doesn't provide a map it's not an error becuase it could provide other ways
+	// to output data
+	printMap := getPrintMap(t.spec)
+	if printMap == nil {
+		return nil, nil
+	}
+
+	eventType, ok := printMap.Value.(*btf.Struct)
+	if !ok {
+		return nil, fmt.Errorf("BPF map %q does not have BTF info for values", printMap.Name)
+	}
+	t.eventType = eventType
+
+	// Almost same hack as in https://github.com/solo-io/bumblebee/blob/c2422b5bab66754b286d062317e244f02a431dac/pkg/loader/loader.go#L114-L120
+	// TODO: Remove it?
+	switch printMap.Type {
+	case ebpf.RingBuf:
+		printMap.ValueSize = 0
+	case ebpf.PerfEventArray:
+		printMap.KeySize = 4
+		printMap.ValueSize = 4
+	}
+
+	return printMap, nil
 }
 
 func (t *Tracer) installTracer() error {
@@ -226,52 +231,39 @@ func (t *Tracer) installTracer() error {
 	mapReplacements := map[string]*ebpf.Map{}
 	consts := map[string]interface{}{}
 
-	printMap, err := getPrintMap(t.spec)
+	printMap, err := t.handlePrintMap()
 	if err != nil {
-		return fmt.Errorf("get print map: %w", err)
+		return fmt.Errorf("handling print_ programs: %w", err)
 	}
 
-	var ok bool
-	t.valueStruct, ok = printMap.Value.(*btf.Struct)
-	if !ok {
-		return fmt.Errorf("BPF map %q does not have BTF info for values", printMap.Name)
+	if t.eventType == nil {
+		return fmt.Errorf("the gadget doesn't provide event type information")
 	}
 
-	// Almost same hack as in bumblebee/pkg/loader/loader.go
-	//t.printMapValueSize = printMap.ValueSize
-	switch printMap.Type {
-	case ebpf.RingBuf:
-		printMap.ValueSize = 0
-	case ebpf.PerfEventArray:
-		printMap.KeySize = 4
-		printMap.ValueSize = 4
-	}
-
-	if t.config.MountnsMap != nil {
-		for _, m := range t.spec.Maps {
-			// Replace filter mount ns map
-			if m.Name == gadgets.MntNsFilterMapName {
-				mapReplacements[gadgets.MntNsFilterMapName] = t.config.MountnsMap
-				consts[gadgets.FilterByMntNsName] = true
-			}
-		}
-
-		if err := t.spec.RewriteConstants(consts); err != nil {
-			return fmt.Errorf("rewriting constants: %w", err)
-		}
-	}
-
-	// Only create socket enricher if this is used by the tracer
+	// Handle special maps like mount ns filter, socket enricher, etc.
 	for _, m := range t.spec.Maps {
-		if m.Name == socketenricher.SocketsMapName {
+		switch m.Name {
+		// Only create socket enricher if this is used by the tracer
+		case socketenricher.SocketsMapName:
 			t.socketEnricher, err = socketenricher.NewSocketEnricher()
 			if err != nil {
 				// Containerized gadgets require a kernel with BTF
 				return fmt.Errorf("creating socket enricher: %w", err)
 			}
 			mapReplacements[socketenricher.SocketsMapName] = t.socketEnricher.SocketsMap()
-			break
+		// Replace filter mount ns map
+		case gadgets.MntNsFilterMapName:
+			if t.config.MountnsMap == nil {
+				break
+			}
+
+			mapReplacements[gadgets.MntNsFilterMapName] = t.config.MountnsMap
+			consts[gadgets.FilterByMntNsName] = true
 		}
+	}
+
+	if err := t.spec.RewriteConstants(consts); err != nil {
+		return fmt.Errorf("rewriting constants: %w", err)
 	}
 
 	// Load the ebpf objects
@@ -283,15 +275,18 @@ func (t *Tracer) installTracer() error {
 		return fmt.Errorf("create BPF collection: %w", err)
 	}
 
-	m := t.collection.Maps[printMap.Name]
-	switch m.Type() {
-	case ebpf.RingBuf:
-		t.ringbufReader, err = ringbuf.NewReader(t.collection.Maps[printMap.Name])
-	case ebpf.PerfEventArray:
-		t.perfReader, err = perf.NewReader(t.collection.Maps[printMap.Name], gadgets.PerfBufferPages*os.Getpagesize())
-	}
-	if err != nil {
-		return fmt.Errorf("create BPF map reader: %w", err)
+	// Some logic before loading the programs
+	if printMap != nil {
+		m := t.collection.Maps[printMap.Name]
+		switch m.Type() {
+		case ebpf.RingBuf:
+			t.ringbufReader, err = ringbuf.NewReader(t.collection.Maps[printMap.Name])
+		case ebpf.PerfEventArray:
+			t.perfReader, err = perf.NewReader(t.collection.Maps[printMap.Name], gadgets.PerfBufferPages*os.Getpagesize())
+		}
+		if err != nil {
+			return fmt.Errorf("create BPF map reader: %w", err)
+		}
 	}
 
 	// Attach programs
@@ -330,8 +325,10 @@ func (t *Tracer) installTracer() error {
 	return nil
 }
 
-func (t *Tracer) run(gadgetCtx gadgets.GadgetContext) {
-	typ := t.valueStruct
+// processEventFunc returns a callback that parses a binary encoded event in data, enriches and
+// returns it.
+func (t *Tracer) processEventFunc(gadgetCtx gadgets.GadgetContext) func(data []byte) *types.Event {
+	typ := t.eventType
 
 	var mntNsIdstart uint32
 	mountNsIdFound := false
@@ -451,53 +448,14 @@ func (t *Tracer) run(gadgetCtx gadgets.GadgetContext) {
 		}
 	}
 
-	for {
-		var rawSample []byte
-
-		if t.ringbufReader != nil {
-			record, err := t.ringbufReader.Read()
-			if err != nil {
-				if errors.Is(err, ringbuf.ErrClosed) {
-					// nothing to do, we're done
-					return
-				}
-				gadgetCtx.Logger().Errorf("read ring buffer: %w", err)
-				return
-			}
-			rawSample = record.RawSample
-		} else if t.perfReader != nil {
-			record, err := t.perfReader.Read()
-			if err != nil {
-				if errors.Is(err, perf.ErrClosed) {
-					return
-				}
-				gadgetCtx.Logger().Errorf("read perf ring buffer: %w", err)
-				return
-			}
-
-			if record.LostSamples != 0 {
-				gadgetCtx.Logger().Warnf("lost %d samples", record.LostSamples)
-				continue
-			}
-			rawSample = record.RawSample
-		}
-
-		// TODO: this check is not valid for all cases. For instance trace exec sends a variable length
-		//if uint32(len(rawSample)) < t.printMapValueSize {
-		//	gadgetCtx.Logger().Errorf("read ring buffer: len(RawSample)=%d!=%d",
-		//		len(rawSample), t.printMapValueSize)
-		//	return
-		//}
-
-		// data will be decoded in the client
-		data := rawSample //[:t.printMapValueSize]
-
+	return func(data []byte) *types.Event {
 		// get mnt_ns_id for enriching the event
 		mtn_ns_id := uint64(0)
 		if mountNsIdFound {
 			mtn_ns_id = *(*uint64)(unsafe.Pointer(&data[mntNsIdstart]))
 		}
 
+		// enrich endpoints
 		l3endpoints := []types.L3Endpoint{}
 		l4endpoints := []types.L4Endpoint{}
 
@@ -564,41 +522,70 @@ func (t *Tracer) run(gadgetCtx gadgets.GadgetContext) {
 			}
 			wasmStrings = append(wasmStrings, string(result))
 		}
-		if !cookie.drop {
-			event := types.Event{
-				Event: eventtypes.Event{
-					Type: eventtypes.NORMAL,
-				},
-				WithMountNsID: eventtypes.WithMountNsID{MountNsID: mtn_ns_id},
-				RawData:       data,
-				L3Endpoints:   l3endpoints,
-				L4Endpoints:   l4endpoints,
-				WasmStrings:   wasmStrings,
-			}
+		if cookie.drop {
+			return nil
+		}
 
-			t.eventCallback(&event)
+		return &types.Event{
+			Event: eventtypes.Event{
+				Type: eventtypes.NORMAL,
+			},
+			WithMountNsID: eventtypes.WithMountNsID{MountNsID: mtn_ns_id},
+			RawData:       data,
+			L3Endpoints:   l3endpoints,
+			L4Endpoints:   l4endpoints,
+			WasmStrings:   wasmStrings,
 		}
 	}
 }
 
-func (t *Tracer) Run(gadgetCtx gadgets.GadgetContext) error {
-	params := gadgetCtx.GadgetParams()
-	if len(params.Get(ProgramContent).AsBytes()) != 0 {
-		t.config.ProgContent = params.Get(ProgramContent).AsBytes()
-	} else {
-		args := gadgetCtx.Args()
-		if len(args) != 1 {
-			return fmt.Errorf("expected exactly one argument, got %d", len(args))
+func (t *Tracer) runPrint(gadgetCtx gadgets.GadgetContext) {
+	cb := t.processEventFunc(gadgetCtx)
+
+	for {
+		var rawSample []byte
+
+		if t.ringbufReader != nil {
+			record, err := t.ringbufReader.Read()
+			if err != nil {
+				if errors.Is(err, ringbuf.ErrClosed) {
+					// nothing to do, we're done
+					return
+				}
+				gadgetCtx.Logger().Errorf("read ring buffer: %w", err)
+				return
+			}
+			rawSample = record.RawSample
+		} else if t.perfReader != nil {
+			record, err := t.perfReader.Read()
+			if err != nil {
+				if errors.Is(err, perf.ErrClosed) {
+					return
+				}
+				gadgetCtx.Logger().Errorf("read perf ring buffer: %w", err)
+				return
+			}
+
+			if record.LostSamples != 0 {
+				gadgetCtx.Logger().Warnf("lost %d samples", record.LostSamples)
+				continue
+			}
+			rawSample = record.RawSample
 		}
 
-		param := args[0]
-		t.config.ProgLocation = param
-		// Download the BPF module
-		byobEbpfPackage, err := t.getByobEbpfPackage()
-		if err != nil {
-			return fmt.Errorf("download byob ebpf package: %w", err)
-		}
-		t.config.ProgContent = byobEbpfPackage.ProgramFileBytes
+		ev := cb(rawSample)
+		t.eventCallback(ev)
+	}
+}
+
+func (t *Tracer) Run(gadgetCtx gadgets.GadgetContext) error {
+	var err error
+
+	params := gadgetCtx.GadgetParams()
+	args := gadgetCtx.Args()
+	t.config.ProgContent, _, err = getProgAndDefinition(params, args)
+	if err != nil {
+		return fmt.Errorf("get ebpf program: %w", err)
 	}
 
 	if len(params.Get(ParamWasm).AsBytes()) != 0 {
@@ -610,7 +597,9 @@ func (t *Tracer) Run(gadgetCtx gadgets.GadgetContext) error {
 		return fmt.Errorf("install tracer: %w", err)
 	}
 
-	go t.run(gadgetCtx)
+	if t.perfReader != nil || t.ringbufReader != nil {
+		go t.runPrint(gadgetCtx)
+	}
 	gadgetcontext.WaitForTimeoutOrDone(gadgetCtx)
 
 	return nil
