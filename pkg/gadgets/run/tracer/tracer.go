@@ -574,7 +574,9 @@ func (t *Tracer) runPrint(gadgetCtx gadgets.GadgetContext) {
 		}
 
 		ev := cb(rawSample)
-		t.eventCallback(ev)
+		if ev != nil {
+			t.eventCallback(ev)
+		}
 	}
 }
 
