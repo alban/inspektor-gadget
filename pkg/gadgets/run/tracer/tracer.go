@@ -127,8 +127,12 @@ func (t *Tracer) Close() {
 }
 
 func (t *Tracer) Stop() {
-	t.wasmModule.Close(context.Background())
-	t.wasmInstance.Close(context.Background())
+	if t.wasmModule != nil {
+		t.wasmModule.Close(context.Background())
+	}
+	if t.wasmInstance != nil {
+		t.wasmInstance.Close(context.Background())
+	}
 
 	if t.collection != nil {
 		t.collection.Close()
@@ -207,19 +211,21 @@ func (t *Tracer) installTracer() error {
 		return nil, fmt.Errorf("HostCall for %s/%s/%s not implemented", binding, namespace, operation)
 	}
 	var err error
-	t.wasmModule, err = engine.New(ctx, host, t.config.WasmContent, &wapc.ModuleConfig{
-		Logger: func(msg string) {
-			t.gadgetCtx.Logger().Info(msg)
-		},
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-	})
-	if err != nil {
-		return fmt.Errorf("creating wasm module: %w", err)
-	}
-	t.wasmInstance, err = t.wasmModule.Instantiate(ctx)
-	if err != nil {
-		return fmt.Errorf("instantiating wasm module: %w", err)
+	if len(t.config.WasmContent) != 0 {
+		t.wasmModule, err = engine.New(ctx, host, t.config.WasmContent, &wapc.ModuleConfig{
+			Logger: func(msg string) {
+				t.gadgetCtx.Logger().Info(msg)
+			},
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+		})
+		if err != nil {
+			return fmt.Errorf("creating wasm module: %w", err)
+		}
+		t.wasmInstance, err = t.wasmModule.Instantiate(ctx)
+		if err != nil {
+			return fmt.Errorf("instantiating wasm module: %w", err)
+		}
 	}
 
 	// Load the spec
@@ -502,28 +508,30 @@ func (t *Tracer) processEventFunc(gadgetCtx gadgets.GadgetContext) func(data []b
 		}
 
 		wasmStrings := []string{}
-		cookie := wasmHostCallContext{
-			l3Endpoints: l3endpoints,
-			l4Endpoints: l4endpoints,
-		}
-		for _, wStr := range wasmStringDefs {
-			inputBuffer := make([]byte, wStr.size)
-			copy(inputBuffer, data[wStr.start:wStr.start+wStr.size])
-
-			ctx := context.WithValue(
-				t.gadgetCtx.Context(),
-				"event",
-				&cookie)
-			result, err := t.wasmInstance.Invoke(ctx,
-				"column_"+wStr.name, []byte(inputBuffer))
-			if err != nil {
-				wasmStrings = append(wasmStrings, fmt.Errorf("invoking wasm function: %w", err).Error())
-				continue
+		if t.wasmInstance != nil {
+			cookie := wasmHostCallContext{
+				l3Endpoints: l3endpoints,
+				l4Endpoints: l4endpoints,
 			}
-			wasmStrings = append(wasmStrings, string(result))
-		}
-		if cookie.drop {
-			return nil
+			for _, wStr := range wasmStringDefs {
+				inputBuffer := make([]byte, wStr.size)
+				copy(inputBuffer, data[wStr.start:wStr.start+wStr.size])
+
+				ctx := context.WithValue(
+					t.gadgetCtx.Context(),
+					"event",
+					&cookie)
+				result, err := t.wasmInstance.Invoke(ctx,
+					"column_"+wStr.name, []byte(inputBuffer))
+				if err != nil {
+					wasmStrings = append(wasmStrings, fmt.Errorf("invoking wasm function: %w", err).Error())
+					continue
+				}
+				wasmStrings = append(wasmStrings, string(result))
+			}
+			if cookie.drop {
+				return nil
+			}
 		}
 
 		return &types.Event{
@@ -585,13 +593,9 @@ func (t *Tracer) Run(gadgetCtx gadgets.GadgetContext) error {
 
 	params := gadgetCtx.GadgetParams()
 	args := gadgetCtx.Args()
-	t.config.ProgContent, _, err = getProgAndDefinition(params, args)
+	t.config.ProgContent, t.config.WasmContent, _, err = getProgAndDefinition(params, args)
 	if err != nil {
 		return fmt.Errorf("get ebpf program: %w", err)
-	}
-
-	if len(params.Get(ParamWasm).AsBytes()) != 0 {
-		t.config.WasmContent = params.Get(ParamWasm).AsBytes()
 	}
 
 	if err := t.installTracer(); err != nil {

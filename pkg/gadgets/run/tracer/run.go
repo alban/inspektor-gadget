@@ -102,31 +102,32 @@ func (g *GadgetDesc) Parser() parser.Parser {
 	return nil
 }
 
-func getProgAndDefinition(params *params.Params, args []string) ([]byte, []byte, error) {
+func getProgAndDefinition(params *params.Params, args []string) ([]byte, []byte, []byte, error) {
 	// First check if things are passed as arguments
 	progContent := params.Get(ProgramContent).AsBytes()
+	wasmContent := params.Get(ParamWasm).AsBytes()
 	definitionBytes := params.Get(ParamDefinition).AsBytes()
 
 	// sanity checks to be sure --prog and --definition aren't used with an image
 	if len(args) != 0 && (len(progContent) != 0 || len(definitionBytes) != 0) {
-		return nil, nil, fmt.Errorf("arguments are not allowed when program or definition are provided")
+		return nil, nil, nil, fmt.Errorf("arguments are not allowed when program or definition are provided")
 	}
 
 	if len(progContent) != 0 && len(definitionBytes) != 0 {
-		return progContent, definitionBytes, nil
+		return progContent, wasmContent, definitionBytes, nil
 	}
 
 	if len(progContent) != 0 || len(definitionBytes) != 0 {
-		return nil, nil, fmt.Errorf("both program and definition must be provided")
+		return nil, nil, nil, fmt.Errorf("both program and definition must be provided")
 	}
 
 	// Fallback to image
 	if len(args) != 1 {
-		return nil, nil, fmt.Errorf("one argument expected: received %d", len(args))
+		return nil, nil, nil, fmt.Errorf("one argument expected: received %d", len(args))
 	}
 	image, err := oci_helper.NormalizeImage(args[0])
 	if err != nil {
-		return nil, nil, fmt.Errorf("normalize image: %w", err)
+		return nil, nil, nil, fmt.Errorf("normalize image: %w", err)
 	}
 
 	var imageStore oras.Target
@@ -141,25 +142,28 @@ func getProgAndDefinition(params *params.Params, args []string) ([]byte, []byte,
 
 	prog, err := oci_helper.GetEbpfProgram(imageStore, &authOpts, image)
 	if err != nil {
-		return nil, nil, fmt.Errorf("get ebpf program: %w", err)
+		return nil, nil, nil, fmt.Errorf("get ebpf program: %w", err)
 	}
 	if len(prog) == 0 {
-		return nil, nil, fmt.Errorf("no program found in image")
+		return nil, nil, nil, fmt.Errorf("no program found in image")
 	}
+
+	// wasm is optional. Don't return an error.
+	wasm, _ := oci_helper.GetWasmProgram(imageStore, &authOpts, image)
 
 	def, err := oci_helper.GetDefinition(imageStore, &authOpts, image)
 	if err != nil {
-		return nil, nil, fmt.Errorf("get definition: %w", err)
+		return nil, nil, nil, fmt.Errorf("get definition: %w", err)
 	}
 	if len(def) == 0 {
-		return nil, nil, fmt.Errorf("no definition found in image")
+		return nil, nil, nil, fmt.Errorf("no definition found in image")
 	}
 
-	return prog, def, nil
+	return prog, wasm, def, nil
 }
 
 func (g *GadgetDesc) GetGadgetInfo(params *params.Params, args []string) (*types.GadgetInfo, error) {
-	progContent, definitionBytes, err := getProgAndDefinition(params, args)
+	progContent, _, definitionBytes, err := getProgAndDefinition(params, args)
 	if err != nil {
 		return nil, fmt.Errorf("get ebpf program and definition: %w", err)
 	}
@@ -237,6 +241,9 @@ func getType(typ btf.Type) reflect.Type {
 			return nil
 		}
 		return reflect.ArrayOf(int(typedMember.Nelems), arrType)
+	case *btf.Typedef:
+		typ, _ := getUnderlyingType(typedMember)
+		return getType(typ)
 	default:
 		return getSimpleType(typ)
 	}

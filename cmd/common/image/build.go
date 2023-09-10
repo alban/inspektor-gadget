@@ -36,6 +36,7 @@ import (
 type buildOptions struct {
 	progAmd64FilePath  string
 	progArm64FilePath  string
+	progWasmFilePath   string
 	definitionFilePath string
 	image              string
 }
@@ -50,6 +51,7 @@ func NewBuildCmd() *cobra.Command {
 
 	cmd.Flags().String("prog-amd64", "", "path to the amd64 variant of the eBPF program")
 	cmd.Flags().String("prog-arm64", "", "path to the arm64 variant of the eBPF program")
+	cmd.Flags().String("prog-wasm", "", "path to the wasm module")
 	cmd.Flags().String("definition", "", "path to the definition file")
 
 	return cmd
@@ -62,6 +64,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	o := &buildOptions{
 		progAmd64FilePath:  cmd.Flag("prog-amd64").Value.String(),
 		progArm64FilePath:  cmd.Flag("prog-arm64").Value.String(),
+		progWasmFilePath:   cmd.Flag("prog-wasm").Value.String(),
 		definitionFilePath: cmd.Flag("definition").Value.String(),
 		image:              args[0],
 	}
@@ -198,6 +201,13 @@ func createImageIndex(target oras.Target, o *buildOptions) (ocispec.Descriptor, 
 			return ocispec.Descriptor{}, fmt.Errorf("create arm64 manifest: %w", err)
 		}
 		layers = append(layers, arm64ManifestDesc)
+	}
+	if o.progWasmFilePath != "" {
+		wasmManifestDesc, err := createManifestForTarget(target, o.definitionFilePath, o.progWasmFilePath, "wasm")
+		if err != nil {
+			return ocispec.Descriptor{}, fmt.Errorf("create wasm manifest: %w", err)
+		}
+		layers = append(layers, wasmManifestDesc)
 	}
 
 	// Create the index which combines the architectures and push it to the memory store

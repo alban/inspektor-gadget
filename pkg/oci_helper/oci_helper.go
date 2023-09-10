@@ -106,17 +106,17 @@ func GetImageListDescriptor(imageStore oras.ReadOnlyTarget, image string) (ocisp
 	return index, nil
 }
 
-func GetHostArchManifest(imageStore oras.ReadOnlyTarget, index ocispec.Index) (ocispec.Manifest, error) {
+func GetHostArchManifest(imageStore oras.ReadOnlyTarget, index ocispec.Index, arch string) (ocispec.Manifest, error) {
 	var manifestDesc ocispec.Descriptor
 	for _, indexManifest := range index.Manifests {
 		// TODO: Check docker code
-		if indexManifest.Platform.Architecture == runtime.GOARCH {
+		if indexManifest.Platform.Architecture == arch {
 			manifestDesc = indexManifest
 			break
 		}
 	}
 	if manifestDesc.Digest == "" {
-		return ocispec.Manifest{}, fmt.Errorf("no manifest found for architecture %q", runtime.GOARCH)
+		return ocispec.Manifest{}, fmt.Errorf("no manifest found for architecture %q", arch)
 	}
 
 	reader, err := imageStore.Fetch(context.Background(), manifestDesc)
@@ -158,7 +158,7 @@ func GetDefinition(target oras.Target, authOpts *AuthOptions, image string) ([]b
 	if err != nil {
 		return nil, fmt.Errorf("get image list descriptor: %w", err)
 	}
-	manifest, err := GetHostArchManifest(target, index)
+	manifest, err := GetHostArchManifest(target, index, runtime.GOARCH)
 	if err != nil {
 		return nil, fmt.Errorf("get arch manifest: %w", err)
 	}
@@ -179,7 +179,31 @@ func GetEbpfProgram(target oras.Target, authOpts *AuthOptions, image string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("get image list descriptor: %w", err)
 	}
-	manifest, err := GetHostArchManifest(target, index)
+	manifest, err := GetHostArchManifest(target, index, runtime.GOARCH)
+	if err != nil {
+		return nil, fmt.Errorf("get arch manifest: %w", err)
+	}
+	if len(manifest.Layers) != 1 {
+		return nil, fmt.Errorf("expected exactly one layer, got %d", len(manifest.Layers))
+	}
+	definition, err := GetContentFromDescriptor(target, manifest.Layers[0])
+	if err != nil {
+		return nil, fmt.Errorf("get ebpf program from descriptor: %w", err)
+	}
+
+	return definition, nil
+}
+
+func GetWasmProgram(target oras.Target, authOpts *AuthOptions, image string) ([]byte, error) {
+	err := PullIfNotExist(target, authOpts, image)
+	if err != nil {
+		return nil, fmt.Errorf("pull image: %w", err)
+	}
+	index, err := GetImageListDescriptor(target, image)
+	if err != nil {
+		return nil, fmt.Errorf("get image list descriptor: %w", err)
+	}
+	manifest, err := GetHostArchManifest(target, index, "wasm")
 	if err != nil {
 		return nil, fmt.Errorf("get arch manifest: %w", err)
 	}
