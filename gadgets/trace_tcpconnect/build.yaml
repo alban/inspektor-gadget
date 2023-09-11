@@ -1,0 +1,2 @@
+program: trace_tcpconnect.bpf.c
+definition: trace_tcpconnect.yaml

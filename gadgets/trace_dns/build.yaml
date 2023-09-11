@@ -1,0 +1,5 @@
+program: trace_dns.bpf.c
+definition: trace_dns.yaml
+#
+# wasm: trace_dns.wasm
+# wasm: trace_dns_rust.wasm
