@@ -52,6 +52,7 @@ func NewBuildCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE:         runBuild,
 	}
+	cmd.Flags().String("dir", ".", "directory")
 
 	// TODO: support custom path to build.yaml
 
@@ -74,7 +75,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		image: args[0],
 	}
 
-	b, err := os.ReadFile("build.yaml")
+	dir := cmd.Flag("dir").Value.String()
+	b, err := os.ReadFile(filepath.Join(dir, "build.yaml"))
 	if err != nil {
 		return fmt.Errorf("read build.yaml: %w", err)
 	}
@@ -93,16 +95,26 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	buildScript := builder.GetBuildScript()
 
 	// TODO: Why is "" needed?
-	buildCmd := exec.Command("/bin/sh", "-c", string(buildScript), "", conf.Program, tmpDir)
+	buildCmd := exec.Command(
+		"/bin/sh",
+		"-c",
+		string(buildScript),
+		"",
+		conf.Program,
+		tmpDir,
+		dir,
+	)
 	out, err := buildCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("build script: %w: %q", err, out)
 	}
 
-	o.definitionFilePath = conf.Definition
+	o.definitionFilePath = filepath.Join(dir, conf.Definition)
 	o.progArm64FilePath = filepath.Join(tmpDir, "/", "arm64.bpf.o")
 	o.progAmd64FilePath = filepath.Join(tmpDir, "/", "x86.bpf.o")
-	o.progWasmFilePath = conf.Wasm
+	if conf.Wasm != "" {
+		o.progWasmFilePath = filepath.Join(dir, conf.Wasm)
+	}
 
 	ociStore, err := oci_helper.GetLocalOciStore()
 	if err != nil {
