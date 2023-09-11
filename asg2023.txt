@@ -1,0 +1,124 @@
+## Preparation
+
+minikube start
+
+sudo vim /etc/resolv.conf # Use 1.1.1.1
+minikube ssh sudo vi /etc/resolv.conf # Use 1.1.1.1
+kubectl delete $(kubectl get pod -n kube-system -l k8s-app=kube-dns -o name) -n kube-system
+
+ssh-add
+
+export IG_EXPERIMENTAL=true
+
+sudo rm -rf /var/lib/ig/
+make ig kubectl-gadget
+cp kubectl-gadget ~/.local/bin/
+sudo cp ig /usr/local/bin
+
+export IG_EXPERIMENTAL=true
+make minikube-deploy
+
+### Prepare Falco
+
+cd $HOME/go/src/github.com/inspektor-gadget/falco-plugin-ig
+
+helm uninstall falco -n falco
+
+helm install falco falcosecurity/falco \
+    --namespace falco --create-namespace \
+    --set-string driver.kind=modern-bpf \
+    --set-string \
+        falcoctl.config.artifact.allowedTypes='{rulesfile,plugin}' \
+    --set-string \
+        falcoctl.config.artifact.install.refs='{albantest.azurecr.io/falco-plugin-ig:0.1.0,albantest.azurecr.io/falco-plugin-ig-ruleset:0.1.0}' \
+    --set-string \
+        falco.load_plugins='{ig}' \
+    --set-string falco.plugins[0].name=ig \
+    --set-string falco.plugins[0].library_path=libfalco-plugin-ig.so \
+    --set-string falco.plugins[0].init_config.gadget=mygadget \
+    --set-string \
+        falco.rules_file='{/etc/falco/ig_rules.yaml}' \
+    --set-string mounts.volumes[0].name='tracefs' \
+    --set-string mounts.volumes[0].hostPath.path='/sys/kernel/tracing' \
+    --set-string mounts.volumeMounts[0].name='tracefs' \
+    --set-string mounts.volumeMounts[0].mountPath='/sys/kernel/tracing'
+
+### Prepare Prometheus
+
+kubectl delete -f docs/examples/prometheus.yaml
+kubectl apply -f docs/examples/prometheus.yaml
+kubectl port-forward --namespace monitoring deployment/prometheus 9090:9090 &
+
+cat my-prometheus-config.yaml
+export IG_EXPERIMENTAL=true
+#sudo -E ig prometheus --config @my-prometheus-config.yaml
+kubectl gadget prometheus --config @my-prometheus-config.yaml
+
+
+docker run -ti --rm --cap-add NET_ADMIN --name=netem wbitt/network-multitool -- /bin/bash
+
+kubectl run -ti --rm --image=busybox --restart=Never shell01 -- sh
+kubectl run -ti --rm --image=busybox --restart=Never shell02 -- sh
+
+#######################################################################################
+
+
+### Gadgets: containerized, OCI image
+
+sudo -E ig image build --dir ./gadgets/trace_tcpconnect albantest.azurecr.io/trace-tcpconnect:v1
+sudo -E ig image list
+sudo -E ig image push albantest.azurecr.io/trace-tcpconnect:v1
+sudo -E ig run albantest.azurecr.io/trace-tcpconnect:v1 -c netem
+
+docker run -ti --rm --cap-add NET_ADMIN --name=netem wbitt/network-multitool -- /bin/bash
+wget wikipedia.org
+
+kubectl gadget run albantest.azurecr.io/trace-tcpconnect:v1 --podname shell01
+kubectl run -ti --rm --image=wbitt/network-multitool --privileged --restart=Never shell01 -- sh
+wget wikipedia.org
+
+## Demo: enrichment with systemd
+
+sudo systemctl start sshd
+
+sudo -E ig trace open --host --show-systemd
+sudo -E ig trace open --host --show-systemd --sdunit sshd.service
+
+sudo systemd-run -t --unit=test01.service bash -c 'while sleep 1 ; do date ; done'
+sudo -E ig trace open --host --show-systemd --sdunit test01.service
+
+
+## Demo WASM
+
+sudo -E ig image build --dir ./gadgets/trace_dns-v1 albantest.azurecr.io/trace-dns:v1
+sudo -E ig image list
+sudo -E ig image push albantest.azurecr.io/trace-dns:v1
+
+sudo -E ig run albantest.azurecr.io/trace-dns:v1
+
+sudo -E ig image build --dir ./gadgets/trace_dns-v2 albantest.azurecr.io/trace-dns:v2
+sudo -E ig image list
+sudo -E ig image push albantest.azurecr.io/trace-dns:v2
+
+sudo -E ig run albantest.azurecr.io/trace-dns:v2
+
+sudo -E ig image build --dir ./gadgets/trace_dns-v3 albantest.azurecr.io/trace-dns:v3
+sudo -E ig image list
+sudo -E ig image push albantest.azurecr.io/trace-dns:v3
+sudo -E ig run albantest.azurecr.io/trace-dns:v3
+
+kubectl gadget run albantest.azurecr.io/trace-dns:v1 --podname shell01
+kubectl run -ti --rm --image=busybox --restart=Never shell01 -- sh
+
+## Prometheus
+
+http://localhost:9090/graph?g0.expr=dns_traffic_total&g0.tab=0&g0.stacked=0&g0.show_exemplars=0&g0.range_input=1m
+
+## falco-plugin-ig
+
+cat ig_rules.yaml
+
+kubectl logs $(kubectl get pod -n falco -o name) -n falco
+
+## Cleanup
+
