@@ -99,7 +99,7 @@ func (g *GadgetDesc) ParamDescs() params.ParamDescs {
 }
 
 func (g *GadgetDesc) Parser() parser.Parser {
-	return nil
+	return parser.NewParser[types.Event](types.GetColumns())
 }
 
 func getProgAndDefinition(params *params.Params, args []string) ([]byte, []byte, []byte, error) {
