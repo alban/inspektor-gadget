@@ -181,37 +181,6 @@ func getGadgetInfo(params *params.Params, args []string, logger logger.Logger) (
 		return nil, err
 	}
 
-	// Add some extra columns here, like from wasm
-	// TODO: There is an architectural issue with this approach, the instance of NewBlobEvent()
-	// cannot be passed to the tracer instance, so there is some code duplication and the code
-	// in both places has to match in order to work.
-	blob := types.NewBlobEvent()
-
-	eventStructureName, eventStruct := getAnyMapElem(ret.GadgetMetadata.Structs)
-	if eventStruct == nil {
-		return nil, fmt.Errorf("struct not found in gadget metadata")
-	}
-
-	fields := []types.Field{}
-
-	// Add virtual columns from wasm
-	for _, c := range ret.Columns {
-		if !c.WasmHandler {
-			continue
-		}
-		col, _ := blob.AddString(c.Name + "2") // FIXME: should replace current column
-		ret.Columns = append(ret.Columns, col)
-		fields = append(fields, types.Field{
-			Name: c.Name + "2",
-			Attributes: types.FieldAttributes{
-				Width: 30,
-			},
-		})
-	}
-
-	eventStruct.Fields = append(eventStruct.Fields, fields...)
-	ret.GadgetMetadata.Structs[*eventStructureName] = *eventStruct
-
 	return ret, nil
 }
 
@@ -763,6 +732,9 @@ func calculateColumnsForClient(gadgetMetadata *types.GadgetMetadata, progContent
 		}
 	}
 
+	// Create a blob to add extra columns from wasm
+	blob := types.NewBlobEvent()
+
 	columns := []types.ColumnDesc{}
 
 	for _, member := range eventType.Members {
@@ -798,6 +770,13 @@ func calculateColumnsForClient(gadgetMetadata *types.GadgetMetadata, progContent
 				Index: -1,
 				Type:  types.Type{Name: "timestamp"},
 			}
+			columns = append(columns, col)
+			continue
+		}
+
+		if wasmHandler {
+			col, _ := blob.AddString(member.Name)
+			col.WasmHandler = wasmHandler
 			columns = append(columns, col)
 			continue
 		}
