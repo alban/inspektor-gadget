@@ -107,22 +107,22 @@ func GetGadgetImage(ctx context.Context, image string, authOpts *AuthOptions, pu
 		}
 	}
 
-	manifestHost, manifestWasm, err := getImageManifestForArch(ctx, imageStore, image, authOpts)
+	manifest, err := getImageManifestForArch(ctx, imageStore, image, authOpts)
 	if err != nil {
 		return nil, fmt.Errorf("getting arch manifest: %w", err)
 	}
 
-	prog, err := getEbpfProgramFromManifest(ctx, imageStore, manifestHost)
+	prog, err := getLayerFromManifest(ctx, imageStore, manifest, eBPFObjectMediaType)
 	if err != nil {
 		return nil, fmt.Errorf("getting ebpf program: %w", err)
 	}
 
-	wasm, err := getWasmProgramFromManifest(ctx, imageStore, manifestWasm)
+	wasm, err := getLayerFromManifest(ctx, imageStore, manifest, wasmObjectMediaType)
 	if err != nil {
-		return nil, fmt.Errorf("getting ebpf program: %w", err)
+		return nil, fmt.Errorf("getting wasm program: %w", err)
 	}
 
-	metadata, err := getMetadataFromManifest(ctx, imageStore, manifestHost)
+	metadata, err := getMetadataFromManifest(ctx, imageStore, manifest)
 	if err != nil {
 		return nil, fmt.Errorf("getting metadata: %w", err)
 	}
@@ -476,32 +476,26 @@ func getMetadataFromManifest(ctx context.Context, target oras.Target, manifest *
 	return metadata, nil
 }
 
-func getEbpfProgramFromManifest(ctx context.Context, target oras.Target, manifest *ocispec.Manifest) ([]byte, error) {
-	if len(manifest.Layers) != 1 {
-		return nil, fmt.Errorf("expected exactly one layer, got %d", len(manifest.Layers))
+func getLayerFromManifest(ctx context.Context, target oras.Target, manifest *ocispec.Manifest, mediaType string) ([]byte, error) {
+	var layer ocispec.Descriptor
+	layerCount := 0
+	for _, l := range manifest.Layers {
+		if l.MediaType == mediaType {
+			layer = l
+			layerCount++
+		}
 	}
-	prog, err := getContentFromDescriptor(ctx, target, manifest.Layers[0])
+	if layerCount != 1 {
+		return nil, fmt.Errorf("expected exactly one layer with media type %q, got %d", mediaType, layerCount)
+	}
+	layerBytes, err := getContentFromDescriptor(ctx, target, layer)
 	if err != nil {
-		return nil, fmt.Errorf("getting ebpf program from descriptor: %w", err)
+		return nil, fmt.Errorf("getting layer %q from descriptor: %w", mediaType, err)
 	}
-	if len(prog) == 0 {
-		return nil, errors.New("program is empty")
+	if len(layerBytes) == 0 {
+		return nil, errors.New("layer is empty")
 	}
-	return prog, nil
-}
-
-func getWasmProgramFromManifest(ctx context.Context, target oras.Target, manifest *ocispec.Manifest) ([]byte, error) {
-	if len(manifest.Layers) != 1 {
-		return nil, fmt.Errorf("expected exactly one layer, got %d", len(manifest.Layers))
-	}
-	prog, err := getContentFromDescriptor(ctx, target, manifest.Layers[0])
-	if err != nil {
-		return nil, fmt.Errorf("getting wasm program from descriptor: %w", err)
-	}
-	if len(prog) == 0 {
-		return nil, errors.New("program is empty")
-	}
-	return prog, nil
+	return layerBytes, nil
 }
 
 func getContentFromDescriptor(ctx context.Context, imageStore oras.ReadOnlyTarget, desc ocispec.Descriptor) ([]byte, error) {
@@ -517,21 +511,20 @@ func getContentFromDescriptor(ctx context.Context, imageStore oras.ReadOnlyTarge
 	return bytes, nil
 }
 
-func getImageManifestForArch(ctx context.Context, target oras.Target, image string, authOpts *AuthOptions) (*ocispec.Manifest, *ocispec.Manifest, error) {
+func getImageManifestForArch(ctx context.Context, target oras.Target, image string, authOpts *AuthOptions) (*ocispec.Manifest, error) {
 	imageRef, err := normalizeImageName(image)
 	if err != nil {
-		return nil, nil, fmt.Errorf("normalizing image: %w", err)
+		return nil, fmt.Errorf("normalizing image: %w", err)
 	}
 
 	index, err := getImageListDescriptor(ctx, target, imageRef.String())
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting image list descriptor: %w", err)
+		return nil, fmt.Errorf("getting image list descriptor: %w", err)
 	}
 
 	manifestHost, err := getArchManifest(target, index, runtime.GOARCH)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting arch manifest: %w", err)
+		return nil, fmt.Errorf("getting arch manifest: %w", err)
 	}
-	manifestWasm, _ := getArchManifest(target, index, ArchWasm)
-	return manifestHost, manifestWasm, nil
+	return manifestHost, nil
 }
