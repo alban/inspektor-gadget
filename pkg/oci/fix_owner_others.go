@@ -18,6 +18,6 @@ package oci
 
 import "fmt"
 
-func fixMetadataOwner(_, _ string) error {
+func fixOwner(_, _ string) error {
 	return fmt.Errorf("fixOwner not implemented on this platform")
 }

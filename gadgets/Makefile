@@ -31,8 +31,13 @@ build: $(GADGETS)
 .PHONY: $(GADGETS)
 $(GADGETS):
 	@echo "Building $@"
-	@sudo -E IG_EXPERIMENTAL=true $(IG) image build --builder-image $(BUILDER_IMAGE) \
-		-t $(GADGET_REPOSITORY)/$@:$(GADGET_TAG) $@
+	rm -f $@/artifacthub-pkg.yml
+	@sudo -E IG_EXPERIMENTAL=true $(IG) image build \
+		--builder-image $(BUILDER_IMAGE) \
+		-t $(GADGET_REPOSITORY)/$@:$(GADGET_TAG) \
+		--update-metadata \
+		--update-artifacthub-pkg \
+		$@
 
 .PHONY:
 push: build
