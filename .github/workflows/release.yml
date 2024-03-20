@@ -28,6 +28,9 @@ jobs:
         find gadgets/ -name artifacthub-pkg.yml | \
           xargs -L 1 sed -i "s/^version:.*$/version: ${inspektor_gadget_version}/"
 
+        find gadgets/ -name artifacthub-pkg.yml | \
+          xargs -L 1 sed -i "s/:latest/v${inspektor_gadget_version}/g"
+
         # The following is to support multiline with GITHUB_OUTPUT, see:
         # https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#multiline-strings
         echo "changes<<EOF" >> $GITHUB_OUTPUT
@@ -53,8 +56,15 @@ jobs:
 
           This PR will not be automatically merged. Please review, edit and merge as appropriate.
 
+          Checklist:
+          - [ ] Check that the [Inspektor Gadget CI](https://github.com/inspektor-gadget/inspektor-gadget/actions/workflows/inspektor-gadget.yml) completed successfully.
+          - [ ] Check that the gadgets OCI images have a new tag with the correct version (v${{ steps.bump_gadgets.outputs.version }}). For example, [gadget/trace_open](https://github.com/inspektor-gadget/inspektor-gadget/pkgs/container/gadget%2Ftrace_open).
+          - [ ] Check the diff of this PR.
+
           After merging, the Artifact Hub bot will notice the update. It might take 30 minutes.
           Then, the following will be updated:
           https://artifacthub.io/packages/search?repo=inspektor-gadgets
+
+          In case of problems, please check the logs in the [Artifact Hub control panel](https://artifacthub.io/control-panel).
 
           Best regards.
