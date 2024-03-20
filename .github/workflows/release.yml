@@ -26,7 +26,7 @@ jobs:
         echo "version=${inspektor_gadget_version}" >> $GITHUB_OUTPUT
 
         find gadgets/ -name artifacthub-pkg.yml | \
-          xargs -L 1 echo sed -i "s/^version:.*$/version: ${inspektor_gadget_version}/"
+          xargs -L 1 sed -i "s/^version:.*$/version: ${inspektor_gadget_version}/"
 
         # The following is to support multiline with GITHUB_OUTPUT, see:
         # https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#multiline-strings
