@@ -1,6 +1,6 @@
 # Artifact Hub package metadata file
 # This file has the automatically generated from gadget.yaml
-version: 0.1.0
+version: 0.27.0-rc2
 name: "snapshot process"
 category: monitoring-logging
 displayName: "snapshot process"
