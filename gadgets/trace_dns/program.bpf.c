@@ -19,6 +19,36 @@
 #define GADGET_TYPE_NETWORKING
 #include <gadget/sockets-map.h>
 
+// Placeholder functions that will be replaced by the real implementation in
+// extension.bpf.c
+//
+// Use a volatile ret variable to ensure the compiler does not optimise away
+// the return value in the caller.
+//
+// Use the argument skb to ensure the compiler does not optimise away the
+// argument stacking in the caller.
+
+__attribute__((noinline)) __u64 gadget_skb_get_mntns(struct __sk_buff *skb) {
+	volatile int ret = skb != NULL;
+	return ret;
+}
+
+__attribute__((noinline)) __u64 gadget_skb_get_pid_tgid(struct __sk_buff *skb) {
+	volatile int ret = skb != NULL;
+	return ret;
+}
+
+__attribute__((noinline)) __u64 gadget_skb_get_comm1(struct __sk_buff *skb) {
+	volatile int ret = skb != NULL;
+	return ret;
+}
+
+__attribute__((noinline)) __u64 gadget_skb_get_comm2(struct __sk_buff *skb) {
+	volatile int ret = skb != NULL;
+	return ret;
+}
+
+
 // Max DNS name length: 255
 // https://datatracker.ietf.org/doc/html/rfc1034#section-3.1
 #define MAX_DNS_NAME 255
@@ -365,6 +395,9 @@ static __always_inline int output_dns_event(struct __sk_buff *skb,
 		event->uid = (__u32)skb_val->uid_gid;
 		event->gid = (__u32)(skb_val->uid_gid >> 32);
 	}
+
+	*(__u64*)event->task = gadget_skb_get_comm1(skb);
+	*(__u64*)(event->task+8) = gadget_skb_get_comm2(skb);
 
 	event->ancount = ancount;
 

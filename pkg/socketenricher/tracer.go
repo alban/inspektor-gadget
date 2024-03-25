@@ -16,6 +16,8 @@ package socketenricher
 
 import (
 	"fmt"
+	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +35,8 @@ import (
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target $TARGET -cc clang -cflags ${CFLAGS} socketsiter ./bpf/sockets-iter.bpf.c -- -I./bpf/
 
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang extension ./bpf/extension.bpf.c -- -I./bpf/ -I../../include/gadget/
+
 const (
 	SocketsMapName = "gadget_sockets"
 )
@@ -46,6 +50,8 @@ type SocketEnricher struct {
 	objs     socketenricherObjects
 	objsIter socketsiterObjects
 	links    []link.Link
+
+	extensionSpec *ebpf.CollectionSpec
 
 	closeOnce sync.Once
 	done      chan bool
@@ -89,6 +95,11 @@ func (se *SocketEnricher) start() error {
 	if err := specIter.LoadAndAssign(&se.objsIter, nil); err != nil {
 		disableBPFIterators = true
 		log.Warnf("Socket enricher: skip loading iterators: %v", err)
+	}
+
+	se.extensionSpec, err = loadExtension()
+	if err != nil {
+		return fmt.Errorf("loading extension: %w", err)
 	}
 
 	spec, err := loadSocketenricher()
@@ -229,6 +240,65 @@ func (se *SocketEnricher) cleanupDeletedSocketsNow(cleanupIter *link.Iter) error
 	// iterator on a map, not on tasks.
 	_, err := bpfiterns.ReadOnCurrentPidNs(cleanupIter)
 	return err
+}
+
+type ExtensionConnection struct {
+	closers []io.Closer
+}
+
+func (ec ExtensionConnection) Close() error {
+	for _, closer := range ec.closers {
+		if err := closer.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (se *SocketEnricher) PlugExtension(target *ebpf.Program, netns uint64) (io.Closer, error) {
+	spec := se.extensionSpec.Copy()
+
+	consts := map[string]interface{}{
+		"current_netns": netns,
+	}
+
+	if err := spec.RewriteConstants(consts); err != nil {
+		return nil, fmt.Errorf("rewriting constants during PlugExtension: %w", err)
+	}
+
+	for funcName, _ := range spec.Programs {
+		if !strings.HasPrefix(funcName, "gadget_") {
+			continue
+		}
+		spec.Programs[funcName].AttachTarget = target
+	}
+
+	mapReplacements := map[string]*ebpf.Map{
+		SocketsMapName: se.objs.GadgetSockets,
+	}
+	opts := ebpf.CollectionOptions{
+		MapReplacements: mapReplacements,
+	}
+	coll, err := ebpf.NewCollectionWithOptions(spec, opts)
+	if err != nil {
+		return nil, fmt.Errorf("loading program: %w", err)
+	}
+	defer coll.Close()
+
+	ec := ExtensionConnection{}
+	for funcName, replacement := range coll.Programs {
+		if !strings.HasPrefix(funcName, "gadget_") {
+			continue
+		}
+
+		freplace, err := link.AttachFreplace(target, funcName, replacement)
+		if err != nil {
+			return nil, fmt.Errorf("replacing function %q: %w", funcName, err)
+		}
+		ec.closers = append(ec.closers, freplace)
+	}
+
+	return ec, nil
 }
 
 func (se *SocketEnricher) Close() {
