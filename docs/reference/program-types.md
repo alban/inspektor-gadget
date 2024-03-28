@@ -60,3 +60,8 @@ The section name must use the `<prog_type>/<file_path>:<symbol>` format.
 `<file_path>` is the absolute path of an executable or a library, that the uprobe will be attached to.
 For common libraries, `<file_path>` can also be the library's name, such as `libc`.
 `<symbol>` is a debugging symbol that can be found in the file mentioned above.
+
+### USDT Tracepoints (experimental)
+The section name must use the `usdt/<file_path>:<providerName>:<probeName>` format.
+`<file_path>` can be either an absolute path or a library name, same as the field in Uprobe.
+`<providerName>` and `<probeName>` are two fields that can jointly identify a USDT trace point.
