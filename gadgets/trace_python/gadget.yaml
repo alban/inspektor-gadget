@@ -1,0 +1,54 @@
+name: 'TODO: Fill the gadget name'
+description: 'TODO: Fill the gadget description'
+homepageURL: 'TODO: Fill the gadget homepage URL'
+documentationURL: 'TODO: Fill the gadget documentation URL'
+sourceURL: 'TODO: Fill the gadget source code URL'
+tracers:
+  python:
+    mapName: events
+    structName: event
+structs:
+  event:
+    fields:
+    - name: mntns_id
+      description: 'TODO: Fill field description'
+      attributes:
+        width: 20
+        alignment: left
+        ellipsis: end
+    - name: pid
+      description: 'TODO: Fill field description'
+      attributes:
+        width: 10
+        alignment: left
+        ellipsis: end
+    - name: comm
+      description: 'TODO: Fill field description'
+      attributes:
+        width: 16
+        alignment: left
+        ellipsis: end
+    - name: operation
+      description: 'TODO: Fill field description'
+      attributes:
+        width: 16
+        alignment: left
+        ellipsis: end
+    - name: filename
+      description: 'TODO: Fill field description'
+      attributes:
+        width: 16
+        alignment: left
+        ellipsis: end
+    - name: funcname
+      description: 'TODO: Fill field description'
+      attributes:
+        width: 16
+        alignment: left
+        ellipsis: end
+    - name: lineno
+      description: 'TODO: Fill field description'
+      attributes:
+        width: 10
+        alignment: left
+        ellipsis: end
