@@ -20,7 +20,7 @@ jobs:
       if: github.repository == 'alban/inspektor-gadget'
       run: |
         # Get the version without the "v" prefix
-        inspektor_gadget_version=$(curl --silent https://api.github.com/repos/${{ github.repository }}/releases/latest | jq .tag_name | tr -d '"v')
+        inspektor_gadget_version=$(echo $GITHUB_REF | tr -d '"v')
 
         echo "version=${inspektor_gadget_version}" >> $GITHUB_OUTPUT
 
