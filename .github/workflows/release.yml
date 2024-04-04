@@ -17,7 +17,7 @@ jobs:
         krew_template_file: .krew.yaml
     - name: Update gadgets' version on artifact hub
       id: bump_gadgets
-      if: github.repository == 'inspektor-gadget/inspektor-gadget'
+      if: github.repository == 'alban/inspektor-gadget'
       run: |
         # Get the version without the "v" prefix
         inspektor_gadget_version=$(curl --silent https://api.github.com/repos/${{ github.repository }}/releases/latest | jq .tag_name | tr -d '"v')
