@@ -18,9 +18,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"unsafe"
+
+	"github.com/inspektor-gadget/inspektor-gadget/pkg/utils/secureopen"
 )
 
 type ldCache1Entry struct {
@@ -134,15 +135,8 @@ func readCacheFormat2(data []byte) []ldEntry {
 // simulate the loader's behaviour, find library path in containers' `/etc/ld.so.cache`.
 // see https://github.com/bminor/glibc/blob/master/elf/cache.c#L292, the `print_cache` func
 // see https://github.com/iovisor/bcc/blob/master/src/cc/bcc_proc.c#L508, the `bcc_procutils_which_so` func
-func parseLdCache(ldCachePath string, libraryName string) ([]string, error) {
-	fileInfo, err := os.Stat(ldCachePath)
-	if err != nil {
-		return nil, fmt.Errorf("stat file %q: %w", ldCachePath, err)
-	}
-	if !fileInfo.Mode().IsRegular() {
-		return nil, fmt.Errorf("ldCache file %q is not regular", ldCachePath)
-	}
-	ldCacheFile, err := os.ReadFile(ldCachePath)
+func parseLdCache(root, ldCachePath string, libraryName string) ([]string, error) {
+	ldCacheFile, err := secureopen.SecureReadFile(root, ldCachePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading file %q: %w", ldCachePath, err)
 	}
