@@ -1,0 +1,13 @@
+# {{ (datasource "gadget").name }}
+
+{{ (ds "gadget").description }}
+
+## Parameters
+{{ if has (ds "gadget") "ebpfParams" -}}
+{{ range $index, $param := index (ds "gadget") "ebpfParams" }}
+### {{ index $param "key" }}
+{{ .description }}
+{{ end -}}
+{{- else -}}
+No parameters
+{{- end -}}
