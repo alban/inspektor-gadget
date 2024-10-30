@@ -13,7 +13,8 @@ ARG GOPROXY
 ENV GOPROXY=${GOPROXY}
 
 COPY go.mod go.sum /cache/
-RUN cd /cache && go mod download
+COPY deps /cache/deps
+RUN cd /cache && ls -l && go mod download
 ADD . /go/src/github.com/inspektor-gadget/inspektor-gadget
 
 WORKDIR /go/src/github.com/inspektor-gadget/inspektor-gadget

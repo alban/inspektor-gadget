@@ -224,7 +224,7 @@ require (
 
 //replace github.com/cilium/ebpf => github.com/cilium/ebpf v0.16.1-0.20241023154409-d3c63ab2edcb
 
-replace github.com/cilium/ebpf => /home/alban/go/src/github.com/cilium/ebpf
+replace github.com/cilium/ebpf => ./deps/ebpf
 
 replace k8s.io/component-base => k8s.io/component-base v0.0.0-20240417101527-62c04b35eff6
 
