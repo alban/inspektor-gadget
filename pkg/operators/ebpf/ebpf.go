@@ -62,11 +62,6 @@ const (
 	ParamIface       = "iface"
 	ParamTraceKernel = "trace-pipe"
 
-	// Keep in sync with `include/gadget/kernel_stack_map.h`
-	KernelStackMapName       = "ig_kstack"
-	KernelStackMapMaxEntries = 10000
-	PerfMaxStackDepth        = 127
-
 	kernelTypesVar = "kernelTypes"
 )
 
@@ -184,7 +179,8 @@ type ebpfInstance struct {
 	enums      []*enum
 	formatters map[datasource.DataSource][]func(ds datasource.DataSource, data datasource.Data) error
 
-	stackIdMap *ebpf.Map
+	kernelStackMap *ebpf.Map
+	userStackMap   *ebpf.Map
 
 	gadgetCtx operators.GadgetContext
 	done      chan struct{}
@@ -290,15 +286,30 @@ func (i *ebpfInstance) analyze() error {
 	}
 
 	// create map for kernel stack, before initializing converters
-	if _, ok := i.collectionSpec.Maps[KernelStackMapName]; ok {
+	if _, ok := i.collectionSpec.Maps[ebpftypes.KernelStackMapName]; ok {
 		stackIdMapSpec := ebpf.MapSpec{
-			Name:       KernelStackMapName,
+			Name:       ebpftypes.KernelStackMapName,
 			Type:       ebpf.StackTrace,
 			KeySize:    4,
-			ValueSize:  8 * PerfMaxStackDepth,
-			MaxEntries: KernelStackMapMaxEntries,
+			ValueSize:  8 * ebpftypes.PerfMaxStackDepth,
+			MaxEntries: ebpftypes.StackMapMaxEntries,
 		}
-		i.stackIdMap, err = ebpf.NewMap(&stackIdMapSpec)
+		i.kernelStackMap, err = ebpf.NewMap(&stackIdMapSpec)
+		if err != nil {
+			return fmt.Errorf("creating stack id map: %w", err)
+		}
+	}
+
+	// create map for user stack, before initializing converters
+	if _, ok := i.collectionSpec.Maps[ebpftypes.UserStackMapName]; ok {
+		stackIdMapSpec := ebpf.MapSpec{
+			Name:       ebpftypes.UserStackMapName,
+			Type:       ebpf.StackTrace,
+			KeySize:    4,
+			ValueSize:  8 * ebpftypes.PerfMaxStackDepth,
+			MaxEntries: ebpftypes.StackMapMaxEntries,
+		}
+		i.userStackMap, err = ebpf.NewMap(&stackIdMapSpec)
 		if err != nil {
 			return fmt.Errorf("creating stack id map: %w", err)
 		}
@@ -573,8 +584,12 @@ func (i *ebpfInstance) Start(gadgetCtx operators.GadgetContext) error {
 	mapReplacements := make(map[string]*ebpf.Map)
 
 	// create map for kernel stack
-	if i.stackIdMap != nil {
-		mapReplacements[KernelStackMapName] = i.stackIdMap
+	if i.kernelStackMap != nil {
+		mapReplacements[ebpftypes.KernelStackMapName] = i.kernelStackMap
+	}
+
+	if i.userStackMap != nil {
+		mapReplacements[ebpftypes.UserStackMapName] = i.userStackMap
 	}
 
 	// Set gadget params
