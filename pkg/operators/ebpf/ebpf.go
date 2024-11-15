@@ -49,6 +49,7 @@ import (
 	ebpftypes "github.com/inspektor-gadget/inspektor-gadget/pkg/operators/ebpf/types"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/params"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/socketenricher"
+	"github.com/inspektor-gadget/inspektor-gadget/pkg/symbolizer"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/tchandler"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/uprobetracer"
 	ebpfutils "github.com/inspektor-gadget/inspektor-gadget/pkg/utils/ebpf"
@@ -64,6 +65,7 @@ const (
 
 	// Keep in sync with `include/gadget/kernel_stack_map.h`
 	KernelStackMapName       = "ig_kstack"
+	UserStackMapName         = "ig_ustack"
 	KernelStackMapMaxEntries = 10000
 	PerfMaxStackDepth        = 127
 
@@ -130,6 +132,11 @@ func (o *ebpfOperator) InstantiateImageOperator(
 		paramValues: paramValues,
 	}
 
+	newInstance.symbolizer, err = symbolizer.NewSymbolizer()
+	if err != nil {
+		return nil, fmt.Errorf("creating symbolizer: %w", err)
+	}
+
 	cfg, ok := gadgetCtx.GetVar("config")
 	if !ok {
 		return nil, fmt.Errorf("missing configuration")
@@ -184,13 +191,16 @@ type ebpfInstance struct {
 	enums      []*enum
 	formatters map[datasource.DataSource][]func(ds datasource.DataSource, data datasource.Data) error
 
-	stackIdMap *ebpf.Map
+	stackIdMap   *ebpf.Map
+	userStackMap *ebpf.Map
 
 	gadgetCtx operators.GadgetContext
 	done      chan struct{}
 
 	// used to be sure all tracers are done before returning from Stop()
 	wg sync.WaitGroup
+
+	symbolizer *symbolizer.Symbolizer
 }
 
 func (i *ebpfInstance) loadSpec() error {
@@ -299,6 +309,21 @@ func (i *ebpfInstance) analyze() error {
 			MaxEntries: KernelStackMapMaxEntries,
 		}
 		i.stackIdMap, err = ebpf.NewMap(&stackIdMapSpec)
+		if err != nil {
+			return fmt.Errorf("creating stack id map: %w", err)
+		}
+	}
+
+	// create map for user stack, before initializing converters
+	if _, ok := i.collectionSpec.Maps[UserStackMapName]; ok {
+		stackIdMapSpec := ebpf.MapSpec{
+			Name:       UserStackMapName,
+			Type:       ebpf.StackTrace,
+			KeySize:    4,
+			ValueSize:  8 * PerfMaxStackDepth,
+			MaxEntries: KernelStackMapMaxEntries,
+		}
+		i.userStackMap, err = ebpf.NewMap(&stackIdMapSpec)
 		if err != nil {
 			return fmt.Errorf("creating stack id map: %w", err)
 		}
@@ -575,6 +600,10 @@ func (i *ebpfInstance) Start(gadgetCtx operators.GadgetContext) error {
 	// create map for kernel stack
 	if i.stackIdMap != nil {
 		mapReplacements[KernelStackMapName] = i.stackIdMap
+	}
+
+	if i.userStackMap != nil {
+		mapReplacements[UserStackMapName] = i.userStackMap
 	}
 
 	// Set gadget params

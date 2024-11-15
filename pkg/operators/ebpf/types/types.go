@@ -28,6 +28,7 @@ const (
 	UidTypeName         = "gadget_uid"
 	GidTypeName         = "gadget_gid"
 	KernelStackTypeName = "gadget_kernel_stack"
+	UserStackTypeName   = "gadget_user_stack"
 	PidTypeName         = "gadget_pid"
 	PpidTypeName        = "gadget_ppid"
 	TidTypeName         = "gadget_tid"

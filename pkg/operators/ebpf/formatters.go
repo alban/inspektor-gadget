@@ -17,6 +17,7 @@ package ebpfoperator
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/cilium/ebpf/btf"
@@ -26,11 +27,13 @@ import (
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/kallsyms"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/operators"
 	ebpftypes "github.com/inspektor-gadget/inspektor-gadget/pkg/operators/ebpf/types"
+	"github.com/inspektor-gadget/inspektor-gadget/pkg/symbolizer"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/utils/annotations"
 )
 
 const (
 	kernelStackTargetNameAnnotation = "ebpf.formatter.kstack"
+	userStackTargetNameAnnotation   = "ebpf.formatter.ustack"
 	enumTargetNameAnnotation        = "ebpf.formatter.enum"
 	enumBitfieldSeparatorAnnotation = "ebpf.formatter.bitfield.separator"
 )
@@ -199,6 +202,96 @@ func (i *ebpfInstance) initStackConverter(gadgetCtx operators.GadgetContext) err
 						break
 					}
 					outString += fmt.Sprintf("[%d]%s; ", depth, kernelSymbolResolver.LookupByInstructionPointer(addr))
+				}
+
+				out.Set(data, []byte(outString))
+				return nil
+			}
+			i.formatters[ds] = append(i.formatters[ds], converter)
+		}
+		for _, in := range ds.GetFieldsWithTag("type:" + ebpftypes.UserStackTypeName) {
+			if in == nil {
+				continue
+			}
+			in.SetHidden(true, false)
+
+			pidField := ds.GetField("proc.pid")
+			if pidField == nil {
+				gadgetCtx.Logger().Warnf("no pid field found")
+				continue
+			}
+
+			inodeField := ds.GetField("inode")
+			if inodeField == nil {
+				gadgetCtx.Logger().Warnf("no inode field found")
+				continue
+			}
+			mtimeSecField := ds.GetField("mtime_sec")
+			if mtimeSecField == nil {
+				gadgetCtx.Logger().Warnf("no mtime_sec field found")
+				continue
+			}
+			mtimeNsecField := ds.GetField("mtime_nsec")
+			if mtimeNsecField == nil {
+				gadgetCtx.Logger().Warnf("no mtime_nsec field found")
+				continue
+			}
+
+			if i.userStackMap == nil {
+				return errors.New("user stack map is not initialized but used. " +
+					"if you are using `gadget_user_stack` as event field, " +
+					"try to include <gadget/user_stack_map.h>")
+			}
+
+			targetName, err := annotations.GetTargetNameFromAnnotation(i.logger, "ustack", in, userStackTargetNameAnnotation)
+			if err != nil {
+				i.logger.Warnf("Failed to get target name for enum field %q: %v", in.Name(), err)
+				continue
+			}
+			out, err := ds.AddField(targetName, api.Kind_String, datasource.WithSameParentAs(in))
+			if err != nil {
+				return err
+			}
+			converter := func(ds datasource.DataSource, data datasource.Data) error {
+				inBytes := in.Get(data)
+				stackId := ds.ByteOrder().Uint32(inBytes)
+				pid, _ := pidField.Uint32(data)
+				inode, _ := inodeField.Uint64(data)
+				mtimeSec, _ := mtimeSecField.Uint64(data)
+				mtimeNsec, _ := mtimeNsecField.Uint32(data)
+
+				// If user stacks are disabled
+				if stackId == math.MaxUint32 {
+					out.Set(data, []byte{})
+					return nil
+				}
+
+				stack := [PerfMaxStackDepth]uint64{}
+				err = i.userStackMap.Lookup(stackId, &stack)
+				if err != nil {
+					i.logger.Warnf("stack with ID %d is lost: %s", stackId, err.Error())
+					out.Set(data, []byte{})
+					return nil
+				}
+
+				outString := ""
+				addrs := make([]uint64, 0, len(stack))
+				for _, addr := range stack {
+					if addr == 0 {
+						break
+					}
+					addrs = append(addrs, addr)
+				}
+
+				exeKey := symbolizer.GenKey(inode, int64(mtimeSec), mtimeNsec)
+				symbols, err := i.symbolizer.Resolve(pid, exeKey, addrs)
+				if err != nil {
+					out.Set(data, []byte(err.Error()))
+					return nil
+				}
+
+				for i, symbol := range symbols {
+					outString += fmt.Sprintf("[%d]%s; ", i, symbol)
 				}
 
 				out.Set(data, []byte(outString))

@@ -58,6 +58,7 @@ typedef __u32 gadget_gid;
 typedef __u64 gadget_syscall;
 
 typedef __u32 gadget_kernel_stack;
+typedef long gadget_user_stack;
 
 #ifndef TASK_COMM_LEN
 #define TASK_COMM_LEN 16
