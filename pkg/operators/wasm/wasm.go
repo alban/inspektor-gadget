@@ -20,13 +20,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"github.com/stealthrocket/wzprof"
 	"github.com/tetratelabs/wazero"
 	wapi "github.com/tetratelabs/wazero/api"
+	"github.com/tetratelabs/wazero/experimental"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 	"oras.land/oras-go/v2"
 
@@ -206,6 +212,29 @@ func (i *wasmOperatorInstance) delHandle(handleID uint32) {
 	delete(i.handleMap, handleID)
 }
 
+var pprofCount int
+
+func startPprof(h http.Handler) {
+	pprofPortStr := os.Getenv("WASM_PPROF_PORT")
+	pprofPort := 6060
+	if pprofPortStr != "" {
+		pprofPort, _ = strconv.Atoi(pprofPortStr)
+	}
+	pprofPort += pprofCount
+	pprofHost := os.Getenv("WASM_PPROF_HOST")
+	if pprofHost == "" {
+		pprofHost = "localhost"
+	}
+	pprofAddr := fmt.Sprintf("%s:%d", pprofHost, pprofPort)
+	mux := http.NewServeMux()
+	mux.Handle("/debug/pprof/", h)
+	go func() {
+		if err := http.ListenAndServe(pprofAddr, mux); err != nil {
+			log.Fatalf("starting pprof server: %v", err)
+		}
+	}()
+}
+
 func (i *wasmOperatorInstance) init(
 	gadgetCtx operators.GadgetContext,
 	target oras.ReadOnlyTarget,
@@ -249,8 +278,38 @@ func (i *wasmOperatorInstance) init(
 		return fmt.Errorf("reading wasm program: %w", err)
 	}
 
+	p := wzprof.ProfilingFor(wasmProgram)
+	cpu := p.CPUProfiler(wzprof.HostTime(true))
+	mem := p.MemoryProfiler(wzprof.InuseMemory(true))
+
+	var listeners []experimental.FunctionListenerFactory
+	listeners = append(listeners, cpu, mem)
+
+	sampleRate := 1.0
+	pprofCount++
+
+	// Prefix needs to stay /debug/pprof/ because of wzprof.Handler's implementation
+	//http.Handle(fmt.Sprintf("/debug/pprof/wasm%d", pprofCount), wzprof.Handler(sampleRate, cpu, mem))
+	startPprof(wzprof.Handler(sampleRate, cpu, mem))
+
+	cpu.StartProfile()
+	time.AfterFunc(10*time.Second, func() {
+		cpu.StopProfile(sampleRate)
+	})
+
+	ctx = experimental.WithFunctionListenerFactory(ctx, experimental.MultiFunctionListenerFactory(listeners...))
+
+	compiledModule, err := i.rt.CompileModule(ctx, wasmProgram)
+	if err != nil {
+		return fmt.Errorf("compiling wasm module: %w", err)
+	}
+	err = p.Prepare(compiledModule)
+	if err != nil {
+		return fmt.Errorf("preparing wasm module: %w", err)
+	}
+
 	config := wazero.NewModuleConfig().WithStartFunctions("_initialize")
-	mod, err := i.rt.InstantiateWithConfig(ctx, wasmProgram, config)
+	mod, err := i.rt.InstantiateModule(ctx, compiledModule, config)
 	if err != nil {
 		return fmt.Errorf("instantiating wasm: %w", err)
 	}
