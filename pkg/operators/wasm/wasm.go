@@ -282,10 +282,13 @@ func (i *wasmOperatorInstance) init(
 	p := wzprof.ProfilingFor(wasmProgram)
 	cpu := p.CPUProfiler(wzprof.HostTime(true))
 	mem := p.MemoryProfiler(wzprof.InuseMemory(true))
+
+
+
 	var listeners []experimental.FunctionListenerFactory
 	listeners = append(listeners, cpu, mem)
 
-	sampleRate := 1.0 / 19
+	sampleRate := 1.0
 	pprofCount++
 
 	// Prefix needs to stay /debug/pprof/ because of wzprof.Handler's implementation
@@ -299,8 +302,18 @@ func (i *wasmOperatorInstance) init(
 
 	ctx = experimental.WithFunctionListenerFactory(ctx, experimental.MultiFunctionListenerFactory(listeners...))
 
+	compiledModule, err := i.rt.CompileModule(ctx, wasmProgram)
+	if err != nil {
+		return fmt.Errorf("compiling wasm module: %w", err)
+	}
+	err = p.Prepare(compiledModule)
+	if err != nil {
+		return fmt.Errorf("preparing wasm module: %w", err)
+	}
+
+
 	config := wazero.NewModuleConfig()
-	mod, err := i.rt.InstantiateWithConfig(ctx, wasmProgram, config)
+	mod, err := i.rt.InstantiateModule(ctx, compiledModule, config)
 	if err != nil {
 		return fmt.Errorf("instantiating wasm: %w", err)
 	}
