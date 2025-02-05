@@ -23,6 +23,9 @@ import (
 //go:wasmimport env fieldGet
 func fieldGet(field uint32, data uint32, kind uint32) uint64
 
+//go:wasmimport env fieldCopy
+func fieldCopy(field uint32, data uint32, kind uint32, dst uint64) uint32
+
 //go:wasmimport env fieldSet
 func fieldSet(field uint32, data uint32, kind uint32, value uint64) uint32
 
@@ -182,6 +185,10 @@ func (f Field) Bytes(data Data) ([]byte, error) {
 	ret := buf.bytes()
 	buf.free()
 	return ret, nil
+}
+
+func (f Field) BytesToSlice(data Data, dst []byte) uint32 {
+	return fieldCopy(uint32(f), uint32(data), uint32(Kind_Bytes), uint64(bytesToBufPtr(dst)))
 }
 
 func (f Field) SetBytes(data Data, buf []byte) error {
