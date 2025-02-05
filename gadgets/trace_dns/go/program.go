@@ -111,187 +111,199 @@ func (r RCode) String() string {
 	return fmt.Sprintf("%d", r)
 }
 
+var (
+	ds api.DataSource
+
+	dataF, lenF, dnsOffF, idF, qrRawF, qrF, qtypeRawF, qtypeF, nameF, rcodeRawF, rcodeF, numAnswersF, addressesF, TruncatedF, RecursionAvailableF, RecursionDesiredF api.Field
+)
+
 //export gadgetInit
 func gadgetInit() int {
-	ds, err := api.GetDataSource("dns")
+	var err error
+	ds, err = api.GetDataSource("dns")
 	if err != nil {
 		api.Warnf("failed to get datasource: %s", err)
 		return 1
 	}
 
-	dataF, err := ds.GetField("data")
+	dataF, err = ds.GetField("data")
 	if err != nil {
 		api.Warnf("failed to get field: %s", err)
 		return 1
 	}
 
-	lenF, err := ds.GetField("data_len")
+	lenF, err = ds.GetField("data_len")
 	if err != nil {
 		api.Warnf("failed to get field: %s", err)
 		return 1
 	}
 
-	dnsOffF, err := ds.GetField("dns_off")
+	dnsOffF, err = ds.GetField("dns_off")
 	if err != nil {
 		api.Warnf("failed to get field: %s", err)
 		return 1
 	}
 
-	idF, err := ds.AddField("id", api.Kind_String)
+	idF, err = ds.AddField("id", api.Kind_String)
 	if err != nil {
 		api.Warnf("failed to add field: %s", err)
 		return 1
 	}
 
-	qrRawF, err := ds.AddField("qr_raw", api.Kind_Bool)
+	qrRawF, err = ds.AddField("qr_raw", api.Kind_Bool)
 	if err != nil {
 		api.Warnf("failed to add field: %s", err)
 		return 1
 	}
 
-	qrF, err := ds.AddField("qr", api.Kind_String)
+	qrF, err = ds.AddField("qr", api.Kind_String)
 	if err != nil {
 		api.Warnf("failed to add field: %s", err)
 		return 1
 	}
 
-	qtypeRawF, err := ds.AddField("qtype_raw", api.Kind_Uint16)
+	qtypeRawF, err = ds.AddField("qtype_raw", api.Kind_Uint16)
 	if err != nil {
 		api.Warnf("failed to add field: %s", err)
 		return 1
 	}
 
-	qtypeF, err := ds.AddField("qtype", api.Kind_String)
+	qtypeF, err = ds.AddField("qtype", api.Kind_String)
 	if err != nil {
 		api.Warnf("failed to add field: %s", err)
 		return 1
 	}
 
-	nameF, err := ds.AddField("name", api.Kind_String)
+	nameF, err = ds.AddField("name", api.Kind_String)
 	if err != nil {
 		api.Warnf("failed to add field: %s", err)
 		return 1
 	}
 
-	rcodeRawF, err := ds.AddField("rcode_raw", api.Kind_Uint16)
+	rcodeRawF, err = ds.AddField("rcode_raw", api.Kind_Uint16)
 	if err != nil {
 		api.Warnf("failed to add field: %s", err)
 		return 1
 	}
 
-	rcodeF, err := ds.AddField("rcode", api.Kind_String)
+	rcodeF, err = ds.AddField("rcode", api.Kind_String)
 	if err != nil {
 		api.Warnf("failed to add field: %s", err)
 		return 1
 	}
 
-	numAnswersF, err := ds.AddField("num_answers", api.Kind_Int32)
+	numAnswersF, err = ds.AddField("num_answers", api.Kind_Int32)
 	if err != nil {
 		api.Warnf("failed to add field: %s", err)
 		return 1
 	}
 
-	addressesF, err := ds.AddField("addresses", api.Kind_String)
-	if err != nil {
-		api.Warnf("failed to add field: %s", err)
-		return 1
-	}
-	
-	TruncatedF, err := ds.AddField("tc", api.Kind_Bool)
+	addressesF, err = ds.AddField("addresses", api.Kind_String)
 	if err != nil {
 		api.Warnf("failed to add field: %s", err)
 		return 1
 	}
 
-	RecursionAvailableF, err := ds.AddField("ra", api.Kind_Bool)
+	TruncatedF, err = ds.AddField("tc", api.Kind_Bool)
 	if err != nil {
 		api.Warnf("failed to add field: %s", err)
 		return 1
 	}
 
-	RecursionDesiredF, err := ds.AddField("rd", api.Kind_Bool)
+	RecursionAvailableF, err = ds.AddField("ra", api.Kind_Bool)
+	if err != nil {
+		api.Warnf("failed to add field: %s", err)
+		return 1
+	}
+
+	RecursionDesiredF, err = ds.AddField("rd", api.Kind_Bool)
 	if err != nil {
 		api.Warnf("failed to add field: %s", err)
 		return 1
 	}
 
 	ds.Subscribe(func(source api.DataSource, data api.Data) {
-		// Get all fields sent by ebpf
-		payloadLen, err := lenF.Uint32(data)
-		if err != nil {
-			api.Warnf("failed to get data_len: %s", err)
-			return
-		}
-		dnsOff, err := dnsOffF.Uint16(data)
-		if err != nil {
-			api.Warnf("failed to get dns_off: %s", err)
-			return
-		}
-
-		if payloadLen < uint32(dnsOff) {
-			api.Warnf("packet too short: dataLen: %d < dnsOff: %d", payloadLen, dnsOff)
-			return
-		}
-
-		payload, err := dataF.Bytes(data)
-		if err != nil {
-			api.Warnf("failed to get data: %s", err)
-			return
-		}
-
-		msg := dnsmessage.Message{}
-		if err := msg.Unpack(payload[dnsOff:]); err != nil {
-			api.Warnf("failed to unpack dns message: %s", err)
-			return
-		}
-
-		idF.SetString(data, fmt.Sprintf("%.4x", msg.ID))
-
-		qrRawF.SetBool(data, msg.Header.Response)
-		if msg.Header.Response {
-			rcodeRawF.SetUint16(data, uint16(msg.Header.RCode))
-			rcodeF.SetString(data, RCode(msg.Header.RCode).String())
-			qrF.SetString(data, "R")
-		} else {
-			qrF.SetString(data, "Q")
-		}
-
-		TruncatedF.SetBool(data, msg.Header.Truncated)
-		
-		RecursionAvailableF.SetBool(data, msg.Header.RecursionAvailable)
-		
-		RecursionDesiredF.SetBool(data, msg.Header.RecursionDesired)
-		
-		if len(msg.Questions) > 0 {
-			question := msg.Questions[0]
-			qtypeRawF.SetUint16(data, uint16(question.Type))
-			qtypeF.SetString(data, Type(question.Type).String())
-			nameF.SetString(data, question.Name.String())
-		}
-
-		numAnswersF.SetInt32(data, int32(len(msg.Answers)))
-
-		var addresses []string
-
-		for _, answer := range msg.Answers {
-			var str string
-			switch answer.Header.Type {
-			case dnsmessage.TypeA:
-				ipv4 := answer.Body.(*dnsmessage.AResource)
-				str = net.IP(ipv4.A[:]).String()
-			case dnsmessage.TypeAAAA:
-				ipv6 := answer.Body.(*dnsmessage.AAAAResource)
-				str = net.IP(ipv6.AAAA[:]).String()
-			}
-			if str != "" {
-				addresses = append(addresses, str)
-			}
-		}
-
-		addressesF.SetString(data, strings.Join(addresses, ","))
+		EventCallback(source, data)
 	}, 0)
 
 	return 0
+}
+
+//export EventCallback
+func EventCallback(source api.DataSource, data api.Data) {
+	// Get all fields sent by ebpf
+	payloadLen, err := lenF.Uint32(data)
+	if err != nil {
+		api.Warnf("failed to get data_len: %s", err)
+		return
+	}
+	dnsOff, err := dnsOffF.Uint16(data)
+	if err != nil {
+		api.Warnf("failed to get dns_off: %s", err)
+		return
+	}
+
+	if payloadLen < uint32(dnsOff) {
+		api.Warnf("packet too short: dataLen: %d < dnsOff: %d", payloadLen, dnsOff)
+		return
+	}
+
+	payload, err := dataF.Bytes(data)
+	if err != nil {
+		api.Warnf("failed to get data: %s", err)
+		return
+	}
+
+	msg := dnsmessage.Message{}
+	if err := msg.Unpack(payload[dnsOff:]); err != nil {
+		api.Warnf("failed to unpack dns message: %s", err)
+		return
+	}
+
+	idF.SetString(data, fmt.Sprintf("%.4x", msg.ID))
+
+	qrRawF.SetBool(data, msg.Header.Response)
+	if msg.Header.Response {
+		rcodeRawF.SetUint16(data, uint16(msg.Header.RCode))
+		rcodeF.SetString(data, RCode(msg.Header.RCode).String())
+		qrF.SetString(data, "R")
+	} else {
+		qrF.SetString(data, "Q")
+	}
+
+	TruncatedF.SetBool(data, msg.Header.Truncated)
+
+	RecursionAvailableF.SetBool(data, msg.Header.RecursionAvailable)
+
+	RecursionDesiredF.SetBool(data, msg.Header.RecursionDesired)
+
+	if len(msg.Questions) > 0 {
+		question := msg.Questions[0]
+		qtypeRawF.SetUint16(data, uint16(question.Type))
+		qtypeF.SetString(data, Type(question.Type).String())
+		nameF.SetString(data, question.Name.String())
+	}
+
+	numAnswersF.SetInt32(data, int32(len(msg.Answers)))
+
+	var addresses []string
+
+	for _, answer := range msg.Answers {
+		var str string
+		switch answer.Header.Type {
+		case dnsmessage.TypeA:
+			ipv4 := answer.Body.(*dnsmessage.AResource)
+			str = net.IP(ipv4.A[:]).String()
+		case dnsmessage.TypeAAAA:
+			ipv6 := answer.Body.(*dnsmessage.AAAAResource)
+			str = net.IP(ipv6.AAAA[:]).String()
+		}
+		if str != "" {
+			addresses = append(addresses, str)
+		}
+	}
+
+	addressesF.SetString(data, strings.Join(addresses, ","))
 }
 
 func main() {}
