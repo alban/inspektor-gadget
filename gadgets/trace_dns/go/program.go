@@ -115,6 +115,8 @@ var (
 	ds api.DataSource
 
 	dataF, lenF, dnsOffF, idF, qrRawF, qrF, qtypeRawF, qtypeF, nameF, rcodeRawF, rcodeF, numAnswersF, addressesF, TruncatedF, RecursionAvailableF, RecursionDesiredF api.Field
+
+	payload []byte
 )
 
 //export gadgetInit
@@ -222,6 +224,8 @@ func gadgetInit() int {
 		return 1
 	}
 
+	payload = make([]byte, 65536) // UDP packets cannot be larger
+
 	ds.Subscribe(func(source api.DataSource, data api.Data) {
 		EventCallback(source, data)
 	}, 0)
@@ -248,14 +252,14 @@ func EventCallback(source api.DataSource, data api.Data) {
 		return
 	}
 
-	payload, err := dataF.Bytes(data)
-	if err != nil {
-		api.Warnf("failed to get data: %s", err)
+	n := dataF.BytesToSlice(data, payload)
+	if n == 0 {
+		api.Warnf("failed to get data")
 		return
 	}
 
 	msg := dnsmessage.Message{}
-	if err := msg.Unpack(payload[dnsOff:]); err != nil {
+	if err := msg.Unpack(payload[dnsOff:n]); err != nil {
 		api.Warnf("failed to unpack dns message: %s", err)
 		return
 	}
