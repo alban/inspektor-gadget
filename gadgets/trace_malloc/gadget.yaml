@@ -21,3 +21,17 @@ datasources:
         annotations:
           description: size of malloc operations
           columns.width: 20
+      user_stack_raw:
+        annotations:
+          columns.hidden: true
+      user_stack:
+        annotations:
+          description: User stack
+          columns.hidden: true
+          columns.width: 20
+params:
+  ebpf:
+    with_user_stack:
+      key: with-user-stack
+      defaultValue: "false"
+      description: Show user stack traces

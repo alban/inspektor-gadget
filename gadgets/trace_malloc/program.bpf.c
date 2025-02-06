@@ -5,10 +5,12 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
+#include <gadget/types.h>
 #include <gadget/buffer.h>
 #include <gadget/common.h>
 #include <gadget/filter.h>
 #include <gadget/macros.h>
+#include <gadget/user_stack_map.h>
 
 #define MAX_ENTRIES 10240
 
@@ -30,6 +32,11 @@ enum memop {
 struct event {
 	gadget_timestamp timestamp_raw;
 	struct gadget_process proc;
+
+	gadget_user_stack user_stack_id_raw;
+	__u64 inode;
+	__u64 mtime_sec;
+	__u32 mtime_nsec;
 
 	enum memop operation_raw;
 	__u64 addr;
@@ -71,6 +78,9 @@ int trace_sched_process_exit(void *ctx)
 GADGET_TRACER_MAP(events, 1024 * 256);
 GADGET_TRACER(malloc, events, event);
 
+const volatile bool with_user_stack = false;
+GADGET_PARAM(with_user_stack);
+
 static __always_inline int gen_alloc_enter(size_t size)
 {
 	u32 tid;
@@ -79,6 +89,43 @@ static __always_inline int gen_alloc_enter(size_t size)
 	bpf_map_update_elem(&sizes, &tid, &size, BPF_ANY);
 
 	return 0;
+}
+
+struct inode___with_timespec64 {
+	struct timespec64 i_mtime;
+};
+
+struct inode___without_timespec64 {
+	time64_t i_mtime_sec;
+	u32 i_mtime_nsec;
+};
+
+static __always_inline void set_user_stack(struct pt_regs *ctx, struct event *event)
+{
+	if (!with_user_stack) {
+		event->user_stack_id_raw = -1;
+		return;
+	}
+
+	event->user_stack_id_raw = gadget_get_user_stack(ctx);
+
+	struct task_struct *task =
+		(struct task_struct *)bpf_get_current_task();
+	struct inode *inode = BPF_CORE_READ(task, mm, exe_file, f_inode);
+	event->inode = (u64)BPF_CORE_READ(inode, i_ino);
+
+	// Linux v6.10 commit 3aa63a569c64e708df547a8913c84e64a06e7853
+	struct inode___without_timespec64 *inode_without_timespec64 = (struct inode___without_timespec64 *)inode;
+	struct inode___with_timespec64 *inode_with_timespec64 = (struct inode___with_timespec64 *)inode;
+
+	if (bpf_core_field_exists(inode_without_timespec64->i_mtime_sec)) {
+		event->mtime_sec = BPF_CORE_READ(inode_without_timespec64, i_mtime_sec);
+		event->mtime_nsec = BPF_CORE_READ(inode_without_timespec64, i_mtime_nsec);
+	}
+	if (bpf_core_field_exists(inode_with_timespec64->i_mtime)) {
+		event->mtime_sec = BPF_CORE_READ(inode_with_timespec64, i_mtime.tv_sec);
+		event->mtime_nsec = BPF_CORE_READ(inode_with_timespec64, i_mtime.tv_nsec);
+	}
 }
 
 static __always_inline int gen_alloc_exit(struct pt_regs *ctx,
@@ -111,6 +158,8 @@ static __always_inline int gen_alloc_exit(struct pt_regs *ctx,
 	event->size = size;
 	event->timestamp_raw = bpf_ktime_get_ns();
 
+    set_user_stack(ctx, event);
+
 	gadget_submit_buf(ctx, &events, event, sizeof(*event));
 
 	return 0;
@@ -133,6 +182,8 @@ static __always_inline int gen_free_enter(struct pt_regs *ctx,
 	event->addr = addr;
 	event->size = 0;
 	event->timestamp_raw = bpf_ktime_get_ns();
+
+    set_user_stack(ctx, event);
 
 	gadget_submit_buf(ctx, &events, event, sizeof(*event));
 
