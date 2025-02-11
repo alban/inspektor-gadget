@@ -1,11 +1,11 @@
 # Artifact Hub package metadata file
-version: 0.37.0
+version: 0.39.0
 name: "profile cpu"
 category: monitoring-logging
 displayName: "profile cpu"
-createdAt: "2025-02-27T08:19:41Z"
-digest: "2025-02-27T08:19:41Z"
-description: "Profile block I/O operations"
+createdAt: "2025-04-25T14:15:41Z"
+digest: "2025-04-25T14:15:41Z"
+description: "Profile CPU"
 logoURL: "https://inspektor-gadget.io/media/brand-icon.svg"
 license: ""
 homeURL: "https://inspektor-gadget.io/docs/latest/gadgets/profile_cpu/"
