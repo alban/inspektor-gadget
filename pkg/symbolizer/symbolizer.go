@@ -18,6 +18,7 @@ package symbolizer
 
 import (
 	"debug/elf"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -156,7 +157,7 @@ func (e *symbolTable) lookupByAddr(address uint64) string {
 	if found {
 		return e.symbols[n].name
 	}
-	return "[unknown]"
+	return fmt.Sprintf("0x%016x", address)
 }
 
 type PidNumbers struct {
@@ -281,7 +282,13 @@ func (s *Symbolizer) newSymbolTable(pid uint32, expectedExeKey exeKey) (*symbolT
 
 	symtab, err := elfFile.Symbols()
 	if err != nil {
-		// No symbols found. This is not an error.
+		// No symbols found. Try workarounds.
+
+		gopclntab := elfFile.Section(".gopclntab")
+		if gopclntab != nil {
+			return s.newSymbolTableFromGoReSym(pid, expectedExeKey)
+		}
+
 		return &symbolTable{}, nil
 	}
 
@@ -305,6 +312,52 @@ func (s *Symbolizer) newSymbolTable(pid uint32, expectedExeKey exeKey) (*symbolT
 	}
 	if symbolCount > maxSymbolCount {
 		return nil, fmt.Errorf("too many symbols: %d", symbolCount)
+	}
+	slices.SortFunc(symbols, func(a, b *symbol) int {
+		if a.value < b.value {
+			return -1
+		}
+		if a.value > b.value {
+			return 1
+		}
+		return 0
+	})
+
+	return &symbolTable{
+		symbols:   symbols,
+		timestamp: time.Now(),
+	}, nil
+}
+
+type goReSym struct {
+	UserFunctions []reSym `json:"UserFunctions"`
+	StdFunctions  []reSym `json:"StdFunctions"`
+}
+
+type reSym struct {
+	Start    uint64 `json:"Start"`
+	End      uint64 `json:"End"`
+	FullName string `json:"FullName"`
+}
+
+func (s *Symbolizer) newSymbolTableFromGoReSym(pid uint32, expectedExeKey exeKey) (*symbolTable, error) {
+	path := fmt.Sprintf("%s/%d/root/goresym.json", host.HostProcFs, pid)
+	jsonFile, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading goresym file: %w", err)
+	}
+	var goReSym goReSym
+	err = json.Unmarshal(jsonFile, &goReSym)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var symbols []*symbol
+	for _, sym := range append(goReSym.UserFunctions, goReSym.StdFunctions...) {
+		symbols = append(symbols, &symbol{
+			name:  sym.FullName,
+			value: sym.Start,
+			size:  sym.End - sym.Start,
+		})
 	}
 	slices.SortFunc(symbols, func(a, b *symbol) int {
 		if a.value < b.value {
