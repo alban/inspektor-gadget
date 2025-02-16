@@ -1,0 +1,21 @@
+$ readelf -n /usr/sbin/chroot | grep 'Build ID'
+    Build ID: 898fb20b71b7dd43b9fe6aebcfe7e5570929ff1f
+
+
+$ sudo DEBUGINFOD_URLS=https://debuginfod.fedoraproject.org/ debuginfod-find debuginfo 898fb20b71b7dd43b9fe6aebcfe7e5570929ff1f
+/root/.cache/debuginfod_client/898fb20b71b7dd43b9fe6aebcfe7e5570929ff1f/debuginfo
+
+eu-nm /root/.cache/debuginfod_client/898fb20b71b7dd43b9fe6aebcfe7e5570929ff1f/debuginfo
+
+===
+
+$ readelf -n /usr/bin/ls | grep 'Build ID'
+    Build ID: a146002a40b622e4d8420c5b96513f0784c8eb7b
+
+$ sudo DEBUGINFOD_URLS=https://debuginfod.fedoraproject.org/ debuginfod-find debuginfo a146002a40b622e4d8420c5b96513f0784c8eb7b
+/root/.cache/debuginfod_client/a146002a40b622e4d8420c5b96513f0784c8eb7b/debuginfo
+
+$ sudo eu-nm -P  /root/.cache/debuginfod_client/a146002a40b622e4d8420c5b96513f0784c8eb7b/debuginfo|grep -w print_dir
+print_dir t 0000000000012e10 0000000000000722
+
+
