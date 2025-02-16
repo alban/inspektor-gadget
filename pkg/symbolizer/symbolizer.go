@@ -54,6 +54,8 @@ type Symbolizer struct {
 	pruneTickerTime  time.Duration
 	symbolTableTTL   time.Duration
 	exit             chan struct{}
+
+	goReSyms map[string]goReSym // build id -> goReSym
 }
 
 // symbolTable is a cache of symbols for a specific executable.
@@ -81,7 +83,11 @@ func (k exeKey) String() string {
 	return fmt.Sprintf("ino=%d mtime=%d.%d", k.ino, k.mtimeSec, k.mtimeNsec)
 }
 
-func NewSymbolizer() (*Symbolizer, error) {
+type SymbolizerOptions struct {
+	GoReSymSpec string
+}
+
+func NewSymbolizer(opts SymbolizerOptions) (*Symbolizer, error) {
 	pid1PidNsInfo, err := os.Stat(fmt.Sprintf("%s/1/ns/pid", host.HostProcFs))
 	if err != nil {
 		return nil, err
@@ -90,6 +96,10 @@ func NewSymbolizer() (*Symbolizer, error) {
 	if !ok {
 		return nil, fmt.Errorf("reading inode of %s/1/ns/pid", host.HostProcFs)
 	}
+	goReSyms, err := parseGoReSym([]byte(opts.GoReSymSpec))
+	if err != nil {
+		return nil, fmt.Errorf("parsing goresym: %w", err)
+	}
 
 	s := &Symbolizer{
 		symbolTables:    make(map[exeKey]*symbolTable),
@@ -97,6 +107,8 @@ func NewSymbolizer() (*Symbolizer, error) {
 		pruneTickerTime: pruneTickerTime,
 		symbolTableTTL:  symbolTableTTL,
 		exit:            make(chan struct{}),
+
+		goReSyms: goReSyms,
 	}
 	return s, nil
 }
@@ -286,7 +298,7 @@ func (s *Symbolizer) newSymbolTable(pid uint32, expectedExeKey exeKey) (*symbolT
 
 		gopclntab := elfFile.Section(".gopclntab")
 		if gopclntab != nil {
-			return s.newSymbolTableFromGoReSym(pid, expectedExeKey)
+			return s.newSymbolTableFromGoReSym(elfFile)
 		}
 
 		return &symbolTable{}, nil
@@ -330,6 +342,7 @@ func (s *Symbolizer) newSymbolTable(pid uint32, expectedExeKey exeKey) (*symbolT
 }
 
 type goReSym struct {
+	BuildId       string  `json:"BuildId"`
 	UserFunctions []reSym `json:"UserFunctions"`
 	StdFunctions  []reSym `json:"StdFunctions"`
 }
@@ -340,17 +353,56 @@ type reSym struct {
 	FullName string `json:"FullName"`
 }
 
-func (s *Symbolizer) newSymbolTableFromGoReSym(pid uint32, expectedExeKey exeKey) (*symbolTable, error) {
-	path := fmt.Sprintf("%s/%d/root/goresym.json", host.HostProcFs, pid)
-	jsonFile, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading goresym file: %w", err)
+func parseGoReSym(b []byte) (map[string]goReSym, error) {
+	goReSyms := make(map[string]goReSym)
+	if len(b) == 0 {
+		return goReSyms, nil
 	}
-	var goReSym goReSym
-	err = json.Unmarshal(jsonFile, &goReSym)
+	var singleGoReSym goReSym
+	var listGoReSym []goReSym
+	err := json.Unmarshal(b, &singleGoReSym)
 	if err != nil {
-		log.Fatal(err)
+		err = json.Unmarshal(b, &listGoReSym)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshalling goresym: %w", err)
+		}
+		for _, entryGoReSym := range listGoReSym {
+			goReSyms[entryGoReSym.BuildId] = entryGoReSym
+		}
+	} else {
+		goReSyms[singleGoReSym.BuildId] = singleGoReSym
 	}
+	return goReSyms, nil
+}
+
+func (s *Symbolizer) newSymbolTableFromGoReSym(elfFile *elf.File) (*symbolTable, error) {
+	// TODO:
+	// 1. read .note.go.buildid from elfFile (std package?)
+	// 2. lookup s.goReSyms[buildid]
+	buildIDSection := elfFile.Section(".note.go.buildid")
+	if buildIDSection == nil {
+		fmt.Printf("build id section not found\n")
+		return &symbolTable{}, nil
+	}
+	buildIDData, err := buildIDSection.Data()
+	if err != nil {
+		return nil, fmt.Errorf("reading build id: %w", err)
+	}
+	// TODO: do correct parsing of buildIDData
+	if len(buildIDData) <= 16 {
+		fmt.Printf("build id data too short\n")
+		return &symbolTable{}, nil
+	}
+	buildIDData = buildIDData[16:]
+
+	// Remove NULL terminated
+	buildID := string(buildIDData[:len(buildIDData)-1])
+	goReSym, ok := s.goReSyms[buildID]
+	if !ok {
+		fmt.Printf("build id %s not found in goReSyms\n", buildID)
+		return &symbolTable{}, nil
+	}
+
 	var symbols []*symbol
 	for _, sym := range append(goReSym.UserFunctions, goReSym.StdFunctions...) {
 		symbols = append(symbols, &symbol{
