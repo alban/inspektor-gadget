@@ -140,6 +140,17 @@ gadget_get_user_stack(struct pt_regs *ctx, struct gadget_user_stack *ustack)
 	}
 
 	gadget_inode_get_mtime(inode, &ustack->mtime_sec, &ustack->mtime_nsec);
+
+    unsigned long start_code, end_code, start_data, end_data;
+	start_code = BPF_CORE_READ(task, mm, start_code);
+    end_code = BPF_CORE_READ(task, mm, end_code);
+	start_data = BPF_CORE_READ(task, mm, start_data);
+    end_data = BPF_CORE_READ(task, mm, end_data);
+	bpf_printk("start_code end_code: %lx %lx", start_code, end_code);
+	bpf_printk("start_data end_data: %lx %lx", start_data, end_data);
+	int ret = bpf_probe_read_user(ustack->buildid, sizeof(ustack->buildid),
+               (void *)start_data);
+    bpf_printk("probe read: %d", ret);
 }
 
 #endif /* __STACK_MAP_H */

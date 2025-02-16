@@ -68,6 +68,8 @@ struct gadget_user_stack {
 	// The stack id as returned by bpf_get_stackid.
 	__u32 stack_id;
 
+	char buildid[32];
+
 	// Pid number from the initial pid namespace's point of view.
 	// In some setups (e.g. Minikube with Docker driver), the pidns of ig's
 	// /host/proc mount is not the init pidns. To support this edge case, we
