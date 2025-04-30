@@ -6,6 +6,7 @@
 #include <bpf/bpf_tracing.h>
 #include <gadget/maps.bpf.h>
 #include <gadget/mntns_filter.h>
+#include <gadget/filter.h>
 #include <gadget/types.h>
 #include <gadget/macros.h>
 #include <gadget/common.h>
@@ -13,7 +14,6 @@
 #include <gadget/user_stack_map.h>
 
 #define TASK_COMM_LEN 16
-#define MAX_CPU_NR 128
 #define MAX_ENTRIES 10240
 
 struct key_t {
@@ -24,10 +24,13 @@ struct key_t {
 };
 
 const volatile bool kernel_stacks_only = false;
+GADGET_PARAM(kernel_stacks_only);
+
 const volatile bool user_stacks_only = false;
+GADGET_PARAM(user_stacks_only);
+
 const volatile bool include_idle = false;
-const volatile pid_t targ_pid = -1;
-const volatile pid_t targ_tid = -1;
+GADGET_PARAM(include_idle);
 
 struct values {
 	__u64 samples;
@@ -64,28 +67,23 @@ static __always_inline bool is_kernel_addr(u64 addr)
 SEC("perf_event/profiler")
 int ig_prof_cpu(struct bpf_perf_event_data *ctx)
 {
+	if (gadget_should_discard_data_current())
+		return 0;
+
+	u64 mntns_id;
+	mntns_id = gadget_get_current_mntns_id();
+	if (gadget_should_discard_mntns_id(mntns_id))
+		return 0;
+
 	u64 id = bpf_get_current_pid_tgid();
-	u32 pid = id >> 32;
 	u32 tid = id;
 	struct values *valp;
 	static const struct values zero = {
 		0,
 	};
 	struct key_t key = {};
-	struct task_struct *task;
-	u64 mntns_id;
 
 	if (!include_idle && tid == 0)
-		return 0;
-
-	if (targ_pid != -1 && targ_pid != pid)
-		return 0;
-	if (targ_tid != -1 && targ_tid != tid)
-		return 0;
-
-	mntns_id = gadget_get_current_mntns_id();
-
-	if (gadget_should_discard_mntns_id(mntns_id))
 		return 0;
 
 	gadget_process_populate(&key.proc);

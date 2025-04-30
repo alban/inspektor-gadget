@@ -34,3 +34,17 @@ datasources:
         annotations:
           flamegraph.level: 30
           flamegraph.type: stack
+params:
+  ebpf:
+    kernel_stacks_only:
+      key: kernel-stacks-only
+      defaultValue: "false"
+      description: Only include the kernel stack
+    user_stacks_only:
+      key: user-stacks-only
+      defaultValue: "false"
+      description: Only include the user stack
+    include_idle:
+      key: include-idle
+      defaultValue: "false"
+      description: Include time the cpu is idle
