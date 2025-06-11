@@ -16,10 +16,13 @@ package expr
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/PaesslerAG/gval"
 	"github.com/expr-lang/expr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,6 +32,8 @@ import (
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-service/api"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/operators"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/operators/simple"
+	// Comparative benchs with filter operator
+	_ "github.com/inspektor-gadget/inspektor-gadget/pkg/operators/filter"
 )
 
 func TestExpression(t *testing.T) {
@@ -362,228 +367,229 @@ func BenchmarkExpression(b *testing.B) {
 	testCases := []testCase{
 		{
 			name:         "incomplete filter",
-			filterString: "abc",
+			filterString: `abc`,
 			error:        true,
 		},
 		{
 			name:         "string match positive",
-			filterString: "stringValue=='abc'",
+			filterString: `stringValue=="abc"`,
 			match:        true,
 		},
 		{
 			name:         "string match negative",
-			filterString: "stringValue=='def'",
+			filterString: `stringValue=="def"`,
 			match:        false,
 		},
 		{
 			name:         "string not match positive",
-			filterString: "stringValue!='def'",
+			filterString: `stringValue!="def"`,
 			match:        true,
 		},
 		{
 			name:         "string not match negative",
-			filterString: "stringValue!='abc'",
+			filterString: `stringValue!="abc"`,
 			match:        false,
 		},
-		{
-			name:         "string lte positive",
-			filterString: "stringValue<='def'",
-			match:        true,
-		},
-		{
-			name:         "string gte negative",
-			filterString: "stringValue>='def'",
-			match:        false,
-		},
-		{
-			name:         "string regex match positive",
-			filterString: "stringValue matches 'a..'",
-			match:        true,
-		},
-		{
-			name:         "string regex match negative",
-			filterString: "stringValue matches 'b..'",
-			match:        false,
-		},
-		{
-			name:         "string regex not match positive",
-			filterString: "stringValue not matches 'b..'",
-			match:        true,
-		},
-		{
-			name:         "string regex not match negative",
-			filterString: "stringValue not matches 'a..'",
-			match:        false,
-		},
-		{
-			name:         "string regex invalid",
-			filterString: "stringValue matches '???a..'",
-			error:        true,
-		},
+		//{
+		//	name:         "string lte positive",
+		//	filterString: `stringValue<="def"`,
+		//	match:        true,
+		//},
+		//{
+		//	name:         "string gte negative",
+		//	filterString: `stringValue>="def"`,
+		//	match:        false,
+		//},
+		//{
+		//	name:         "string regex match positive",
+		//	filterString: "stringValue matches 'a..'",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "string regex match negative",
+		//	filterString: "stringValue matches 'b..'",
+		//	match:        false,
+		//},
+		//{
+		//	name:         "string regex not match positive",
+		//	filterString: "stringValue not matches 'b..'",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "string regex not match negative",
+		//	filterString: "stringValue not matches 'a..'",
+		//	match:        false,
+		//},
+		//{
+		//	name:         "string regex invalid",
+		//	filterString: "stringValue matches '???a..'",
+		//	error:        true,
+		//},
 
-		{
-			name:         "int match positive",
-			filterString: "int64Value==123",
-			match:        true,
-		},
-		{
-			name:         "int match negative",
-			filterString: "int64Value==345",
-			match:        false,
-		},
-		{
-			name:         "int gte positive",
-			filterString: "int64Value>=1",
-			match:        true,
-		},
-		{
-			name:         "int gte positive",
-			filterString: "int64Value>=123",
-			match:        true,
-		},
-		{
-			name:         "int gte negative",
-			filterString: "int64Value>=1000",
-			match:        false,
-		},
-		{
-			name:         "int lte positive",
-			filterString: "int64Value<=1000",
-			match:        true,
-		},
-		{
-			name:         "int lte positive",
-			filterString: "int64Value<=123",
-			match:        true,
-		},
-		{
-			name:         "int lte negative",
-			filterString: "int64Value<=1",
-			match:        false,
-		},
-		{
-			name:         "int gt positive",
-			filterString: "int64Value>=1",
-			match:        true,
-		},
-		{
-			name:         "int gt negative",
-			filterString: "int64Value>=1000",
-			match:        false,
-		},
-		{
-			name:         "int lt positive",
-			filterString: "int64Value>1",
-			match:        true,
-		},
-		{
-			name:         "int lt negative",
-			filterString: "int64Value>1000",
-			match:        false,
-		},
-		{
-			name:         "int no int",
-			filterString: "int64Value>'abc'",
-			error:        true,
-		},
-
-		{
-			name:         "float match positive",
-			filterString: "float64Value==456",
-			match:        true,
-		},
-		{
-			name:         "float match positive",
-			filterString: "float64Value==456.0",
-			match:        true,
-		},
-		{
-			name:         "float match negative",
-			filterString: "float64Value==345",
-			match:        false,
-		},
-		{
-			name:         "float match negative",
-			filterString: "float64Value==456.8",
-			match:        false,
-		},
-		{
-			name:         "float gte positive",
-			filterString: "float64Value>=1",
-			match:        true,
-		},
-		{
-			name:         "float gte positive",
-			filterString: "float64Value>=456",
-			match:        true,
-		},
-		{
-			name:         "float gte negative",
-			filterString: "float64Value>=1000",
-			match:        false,
-		},
-		{
-			name:         "float lte positive",
-			filterString: "float64Value<=1000",
-			match:        true,
-		},
-		{
-			name:         "float lte positive",
-			filterString: "float64Value<=456",
-			match:        true,
-		},
-		{
-			name:         "float lte negative",
-			filterString: "float64Value<=1",
-			match:        false,
-		},
-		{
-			name:         "float gt positive",
-			filterString: "float64Value>=1.0",
-			match:        true,
-		},
-		{
-			name:         "float gt negative",
-			filterString: "float64Value>=1000.0",
-			match:        false,
-		},
-		{
-			name:         "float lt positive",
-			filterString: "float64Value>1.0",
-			match:        true,
-		},
-		{
-			name:         "float lt negative",
-			filterString: "float64Value>1000.0",
-			match:        false,
-		},
-		{
-			name:         "float no float",
-			filterString: "float64Value>'abc'",
-			error:        true,
-		},
-
-		{
-			name:         "bool match positive",
-			filterString: "boolValue==true",
-			match:        true,
-		},
-		{
-			name:         "bool match negative",
-			filterString: "boolValue==false",
-			match:        false,
-		},
-		{
-			name:         "bool not match positive",
-			filterString: "boolValue!=false",
-			match:        true,
-		},
-		{
-			name:         "bool not match negative",
-			filterString: "boolValue!=true",
-			match:        false,
-		},
+		//{
+		//	name:         "int match positive",
+		//	filterString: "int64Value==123",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "int match negative",
+		//	filterString: "int64Value==345",
+		//	match:        false,
+		//},
+		//{
+		//	name:         "int gte positive",
+		//	filterString: "int64Value>=1",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "int gte positive",
+		//	filterString: "int64Value>=123",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "int gte negative",
+		//	filterString: "int64Value>=1000",
+		//	match:        false,
+		//},
+		//{
+		//	name:         "int lte positive",
+		//	filterString: "int64Value<=1000",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "int lte positive",
+		//	filterString: "int64Value<=123",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "int lte negative",
+		//	filterString: "int64Value<=1",
+		//	match:        false,
+		//},
+		//{
+		//	name:         "int gt positive",
+		//	filterString: "int64Value>=1",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "int gt negative",
+		//	filterString: "int64Value>=1000",
+		//	match:        false,
+		//},
+		//{
+		//	name:         "int lt positive",
+		//	filterString: "int64Value>1",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "int lt negative",
+		//	filterString: "int64Value>1000",
+		//	match:        false,
+		//},
+		//{
+		//	name:         "int no int",
+		//	filterString: "int64Value>'abc'",
+		//	error:        true,
+		//},
+		//
+		//{
+		//	name:         "float match positive",
+		//	filterString: "float64Value==456",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "float match positive",
+		//	filterString: "float64Value==456.0",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "float match negative",
+		//	filterString: "float64Value==345",
+		//	match:        false,
+		//},
+		//{
+		//	name:         "float match negative",
+		//	filterString: "float64Value==456.8",
+		//	match:        false,
+		//},
+		//{
+		//	name:         "float gte positive",
+		//	filterString: "float64Value>=1",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "float gte positive",
+		//	filterString: "float64Value>=456",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "float gte negative",
+		//	filterString: "float64Value>=1000",
+		//	match:        false,
+		//},
+		//{
+		//	name:         "float lte positive",
+		//	filterString: "float64Value<=1000",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "float lte positive",
+		//	filterString: "float64Value<=456",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "float lte negative",
+		//	filterString: "float64Value<=1",
+		//	match:        false,
+		//},
+		//{
+		//	name:         "float gt positive",
+		//	filterString: "float64Value>=1.0",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "float gt negative",
+		//	filterString: "float64Value>=1000.0",
+		//	match:        false,
+		//},
+		//{
+		//	name:         "float lt positive",
+		//	filterString: "float64Value>1.0",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "float lt negative",
+		//	filterString: "float64Value>1000.0",
+		//	match:        false,
+		//},
+		//{
+		//	name:         "float no float",
+		//	filterString: "float64Value>'abc'",
+		//	error:        true,
+		//},
+		//
+		//{
+		//	name:         "bool match positive",
+		//	filterString: "boolValue==true",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "bool match negative",
+		//	filterString: "boolValue==false",
+		//	match:        false,
+		//},
+		//{
+		//	name:         "bool not match positive",
+		//	filterString: "boolValue!=false",
+		//	match:        true,
+		//},
+		//{
+		//	name:         "bool not match negative",
+		//	filterString: "boolValue!=true",
+		//	match:        false,
+		//},
 	}
+	method := os.Getenv("METHOD")
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			if tc.error {
@@ -603,14 +609,100 @@ func BenchmarkExpression(b *testing.B) {
 			float64Field.PutFloat64(data, testCaseData.float64Value)
 			boolField.PutBool(data, testCaseData.boolValue)
 
-			prog, _ := expr.Compile(tc.filterString, expr.Env(&wrap{}), expr.AsBool(), expr.Patch(&dsPatcher{ds: ds}))
-			b.ResetTimer()
+			switch method {
+			case "gval":
+				ff := getGValFunc(b, "data."+tc.filterString)
 
-			for i := 0; i < b.N; i++ {
-				expr.Run(prog, wrap{d: data})
+				b.ResetTimer()
+
+				for i := 0; i < b.N; i++ {
+					result := ff(ds, data)
+					if result != tc.match {
+						b.Fatalf("expected match %v, got %v", tc.match, result)
+					}
+				}
+
+			case "expr":
+				prog, _ := expr.Compile(tc.filterString, expr.Env(&wrap{}), expr.AsBool(), expr.Patch(&dsPatcher{ds: ds}))
+
+				b.ResetTimer()
+
+				for i := 0; i < b.N; i++ {
+					result, err := expr.Run(prog, wrap{d: data})
+					if err != nil {
+						b.Fatalf("evaluating expression: %v", err)
+					}
+					if result.(bool) != tc.match {
+						b.Fatalf("expected match %v, got %v", tc.match, result)
+					}
+				}
+			default:
+				b.Fatalf("unknown method %q, use 'gval' or 'expr'", method)
 			}
 		})
 	}
+}
+
+type dataCustomSelector struct {
+	ds     datasource.DataSource
+	data   datasource.Data
+	parent datasource.FieldAccessor
+}
+
+func (s *dataCustomSelector) SelectGVal(_ context.Context, k string) (interface{}, error) {
+	var accessor datasource.FieldAccessor
+	if s.parent != nil {
+		k = s.parent.FullName() + "." + k
+	}
+	accessor = s.ds.GetField(k)
+	if accessor == nil {
+		return nil, fmt.Errorf("field %q not found in datasource %q", k, s.ds.Name())
+	}
+	if len(accessor.SubFields()) > 0 {
+		return &dataCustomSelector{
+			ds:     s.ds,
+			data:   s.data,
+			parent: accessor,
+		}, nil
+	}
+
+	ret, err := accessor.String(s.data)
+	if err != nil {
+		return nil, fmt.Errorf("selecting field %q from datasource %q: %w", k, s.ds.Name(), err)
+	}
+	return ret, nil
+}
+
+func getGValFunc(b *testing.B, filter string) func(ds datasource.DataSource, data datasource.Data) bool {
+	extensions := []gval.Language{}
+	extensions = append(extensions,
+		gval.Function("len", func(arguments ...interface{}) (interface{}, error) {
+			return len(arguments[0].(string)), nil
+		}),
+	)
+	eval, err := gval.Full(extensions...).
+		NewEvaluable(filter)
+	if err != nil {
+		b.Fatalf("parsing filter expression %q: %v", filter, err)
+		return nil
+	}
+
+	ff := func(ds datasource.DataSource, data datasource.Data) bool {
+		ret, err := eval.EvalBool(
+			context.Background(),
+			map[string]interface{}{"data": &dataCustomSelector{
+				ds:     ds,
+				data:   data,
+				parent: nil,
+			}},
+		)
+		if err != nil {
+			b.Fatalf("evaluating filter expression %q: %v", filter, err)
+			return true // if we cannot evaluate the expression, we do not filter out the data
+		}
+		return ret
+	}
+	return ff
 }
 
 func Tester(

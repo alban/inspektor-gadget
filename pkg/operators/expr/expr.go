@@ -228,7 +228,7 @@ func (f *expressionOperator) InstantiateDataOperator(gadgetCtx operators.GadgetC
 
 	dsMap := make(map[datasource.DataSource]*vm.Program)
 
-	for _, fullExpression := range strings.Split(expressionCfg, ",") {
+	for _, fullExpression := range strings.Split(expressionCfg, ",,,") {
 		expressionInfo := strings.SplitN(fullExpression, ":", 2)
 		var dsName string
 		expression := expressionInfo[0]
