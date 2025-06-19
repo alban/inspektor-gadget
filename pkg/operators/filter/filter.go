@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/PaesslerAG/gval"
 	log "github.com/sirupsen/logrus"
@@ -292,6 +293,109 @@ func (f *filterOperatorInstance) addFilter(gadgetCtx operators.GadgetContext, fi
 	return nil
 }
 
+func GetFilterExprFunc(ctx context.Context, ds datasource.DataSource, filter string) (func(ds datasource.DataSource, data datasource.Data) bool, error) {
+	extensions := []gval.Language{}
+	extensions = append(extensions,
+		gval.VariableSelector(func(path gval.Evaluables) gval.Evaluable {
+			return func(c context.Context, v interface{}) (interface{}, error) {
+				keys, err := path.EvalStrings(c, v)
+				if err != nil {
+					return nil, err
+				}
+				accessor := ds.GetField(strings.Join(keys, "."))
+				if accessor == nil {
+					return nil, err
+				}
+				data := v.(datasource.Data)
+				return accessor.Any(data)
+			}
+		}),
+	)
+
+	var regexpCache sync.Map
+
+	extensions = append(extensions,
+		gval.Function("len", func(arguments ...interface{}) (interface{}, error) {
+			if len(arguments) != 1 {
+				return nil, fmt.Errorf("len function expects exactly one argument, got %d", len(arguments))
+			}
+			str, ok := arguments[0].(string)
+			if !ok {
+				return nil, fmt.Errorf("len function expects a string argument, got %T", arguments[0])
+			}
+			return len(str), nil
+		}),
+		gval.InfixOperator("matches", func(strI, patternI interface{}) (interface{}, error) {
+			str, ok := strI.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected type string for matches operator but got %T", strI)
+			}
+			pattern, ok := patternI.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected type string for matches operator but got %T", patternI)
+			}
+			var r *regexp.Regexp
+			var regexpAny interface{}
+			regexpAny, ok = regexpCache.Load(pattern)
+			if ok {
+				r = regexpAny.(*regexp.Regexp)
+			} else {
+				var err error
+				r, err = regexp.Compile(pattern)
+				if err != nil {
+					return nil, fmt.Errorf("invalid regular expression: %q", pattern)
+				}
+				regexpCache.Store(pattern, r)
+			}
+			matched := r.MatchString(str)
+			return matched, nil
+		}),
+		//gval.Function("matches", func(arguments ...interface{}) (interface{}, error) {
+		//	if len(arguments) != 2 {
+		//		return nil, fmt.Errorf("matches function expects exactly two arguments, got %d", len(arguments))
+		//	}
+		//	pattern, ok := arguments[0].(string)
+		//	if !ok {
+		//		return nil, fmt.Errorf("matches function expects a string as first argument, got %T", arguments[0])
+		//	}
+		//	str, ok := arguments[1].(string)
+		//	if !ok {
+		//		return nil, fmt.Errorf("matches function expects a string as second argument, got %T", arguments[1])
+		//	}
+		//	var r *regexp.Regexp
+		//	var regexpAny interface{}
+		//	regexpAny, ok = regexpCache.Load(pattern)
+		//	if ok {
+		//		r = regexpAny.(*regexp.Regexp)
+		//	} else {
+		//		var err error
+		//		r, err = regexp.Compile(pattern)
+		//		if err != nil {
+		//			return nil, fmt.Errorf("invalid regular expression: %q", pattern)
+		//		}
+		//		regexpCache.Store(pattern, r)
+		//	}
+		//	matched := r.MatchString(str)
+		//	return matched, nil
+		//}),
+	)
+	eval, err := gval.Full(extensions...).
+		NewEvaluable(filter)
+	if err != nil {
+		log.Errorf("parsing filter expression %q: %v", filter, err)
+		return nil, err
+	}
+
+	return func(ds datasource.DataSource, data datasource.Data) bool {
+		b, err := eval.EvalBool(ctx, data)
+		if err != nil {
+			log.Errorf("evaluating filter expression %q: %v", filter, err)
+			return true // if we cannot evaluate the expression, we do not filter out the data
+		}
+		return b
+	}, nil
+}
+
 func (f *filterOperatorInstance) addFilterExpr(gadgetCtx operators.GadgetContext, filter string) error {
 	datasources := gadgetCtx.GetDataSources()
 	filterParts := strings.SplitN(filter, ":", 2)
@@ -314,47 +418,14 @@ func (f *filterOperatorInstance) addFilterExpr(gadgetCtx operators.GadgetContext
 		}
 	}
 	if ds == nil {
-		return fmt.Errorf("datasource %q not found (available datasources: %s)", dsPart, strings.Join(slices.Collect(maps.Keys(datasources)), ", "))
+		return fmt.Errorf("datasource %q not found (available datasources: %s)",
+			dsPart,
+			strings.Join(slices.Collect(maps.Keys(datasources)), ", "))
 	}
 
-	extensions := []gval.Language{}
-	extensions = append(extensions,
-		gval.VariableSelector(func(path gval.Evaluables) gval.Evaluable {
-			return func(c context.Context, v interface{}) (interface{}, error) {
-				keys, err := path.EvalStrings(c, v)
-				if err != nil {
-					return nil, err
-				}
-				accessor := ds.GetField(strings.Join(keys, "."))
-				if accessor == nil {
-					return nil, err
-				}
-				data := v.(datasource.Data)
-				return accessor.Any(data)
-			}
-		}),
-	)
-	extensions = append(extensions,
-		gval.Function("len", func(arguments ...interface{}) (interface{}, error) {
-			return len(arguments[0].(string)), nil
-		}),
-	)
-	eval, err := gval.Full(extensions...).
-		NewEvaluable(filterPart)
+	ff, err := GetFilterExprFunc(gadgetCtx.Context(), ds, filterPart)
 	if err != nil {
-		log.Errorf("parsing filter expression %q: %v", filterPart, err)
 		return err
-	}
-
-	ff := func(ds datasource.DataSource, data datasource.Data) bool {
-		b, err := eval.EvalBool(
-			gadgetCtx.Context(), data,
-		)
-		if err != nil {
-			log.Errorf("evaluating filter expression %q: %v", filterPart, err)
-			return true // if we cannot evaluate the expression, we do not filter out the data
-		}
-		return b
 	}
 	f.ffns[ds] = append(f.ffns[ds], ff)
 
