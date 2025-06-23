@@ -374,17 +374,17 @@ func getProgramStats(cache map[ebpf.ProgramID]progStat, id ebpf.ProgramID) (prog
 	}
 	defer prog.Close()
 
-	pi, err := prog.Info()
+	_, err = prog.Info()
 	if err != nil {
 		return progStat{}, err
 	}
 
-	runtime, _ := pi.Runtime()
-	runcount, _ := pi.RunCount()
+	//runtime, _ := pi.Runtime()
+	//runcount, _ := pi.RunCount()
 
 	stat := progStat{
-		runtime:  uint64(runtime),
-		runcount: runcount,
+		runtime:  uint64(0),
+		runcount: 0,
 	}
 	cache[id] = stat
 
@@ -502,9 +502,9 @@ func (i *ebpfOperatorDataInstance) getStats() ([]stat, error) {
 		stat.programID = uint32(id)
 		stat.programName = pi.Name
 		stat.programType = pi.Type.String()
-		runtime, _ := pi.Runtime()
+		runtime := 0
 		stat.runtime = uint64(runtime)
-		stat.runcount, _ = pi.RunCount()
+		stat.runcount = 0
 
 		i.oldProgStats[curID] = progStat{
 			runtime:  stat.runtime,
