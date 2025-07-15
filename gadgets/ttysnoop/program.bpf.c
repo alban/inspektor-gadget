@@ -23,6 +23,9 @@ struct event {
 	gadget_timestamp timestamp_raw;
 	struct gadget_process proc;
 
+	u64 ino;
+	u64 inoptr;
+
 	u32 len;
 	char buf[MAX_BUF_SIZE];
 };
@@ -50,26 +53,43 @@ int BPF_KPROBE(tty_write_e, struct kiocb *iocb, struct iov_iter *from)
 
 	gadget_process_populate(&event->proc);
 	event->timestamp_raw = bpf_ktime_get_boot_ns();
+	event->inoptr = (u64)BPF_CORE_READ(iocb, ki_filp, f_inode);
+	event->ino = BPF_CORE_READ(iocb, ki_filp, f_inode, i_ino);
 
 	if (!bpf_core_field_exists(from->iter_type))
 		return 0;
 
 	// enum iter_type does not have ITER_UBUF prior to Linux v6.0:
 	// https://github.com/torvalds/linux/commit/fcb14cb1bdacec5b4374fe161e83fb8208164a85
-	enum iter_type type = BPF_CORE_READ(from, iter_type);
 
-	if (bpf_core_enum_value_exists(enum iter_type, ITER_UBUF) &&
-	    type == bpf_core_enum_value(enum iter_type, ITER_UBUF)) {
+	// In Linux v6.4, the __ubuf_iovec field was added to iov_iter
+	// https://github.com/torvalds/linux/commit/747b1f65d39ae729b7914075899b0c82d7f667db
+
+	const struct iovec *iov = NULL;
+	if (bpf_core_field_exists(struct iov_iter, __ubuf_iovec) &&
+	    bpf_core_enum_value_exists(enum iter_type, ITER_UBUF) &&
+	    BPF_CORE_READ(from, iter_type) ==
+		    bpf_core_enum_value(enum iter_type, ITER_UBUF))
+		iov = &from->__ubuf_iovec;
+	else if (bpf_core_field_exists(struct iov_iter, __iov))
+		iov = BPF_CORE_READ(from, __iov);
+
+	if (iov)
 		bpf_probe_read_kernel(&event->len, sizeof(event->len),
-				      &from->__ubuf_iovec.iov_len);
+				      &iov->iov_len);
+	else
+		event->len = BPF_CORE_READ(from, count);
 
-		u32 len = event->len;
-		if (len > MAX_BUF_SIZE) {
-			len = MAX_BUF_SIZE;
-		}
-		bpf_probe_read_user(&event->buf, len,
-				    BPF_CORE_READ(from, __ubuf_iovec.iov_base));
+	u32 len = event->len;
+	if (len > MAX_BUF_SIZE) {
+		len = MAX_BUF_SIZE;
 	}
+	if (iov)
+		bpf_probe_read_user(&event->buf, len,
+				    BPF_CORE_READ(iov, iov_base));
+	else
+		bpf_probe_read_user(&event->buf, len,
+				    BPF_CORE_READ(from, ubuf));
 
 	gadget_submit_buf(ctx, &events, event, sizeof(*event));
 

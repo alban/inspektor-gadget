@@ -11,3 +11,7 @@ datasources:
           description: 'buffer'
           columns.width: 32
       len:
+      ino:
+      inoptr:
+        annotations:
+          columns.hidden: "true"
