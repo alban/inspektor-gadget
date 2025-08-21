@@ -18,8 +18,10 @@ package symbolizer
 
 import (
 	"bufio"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -60,12 +62,21 @@ func (s *Symbolizer) resolveWithSymtab(task Task, stackItems []StackItemQuery, r
 	s.lockSymbolTables.RLock()
 	table, ok := s.symbolTables[key]
 	if ok {
-		var baseAddress uint64
+		var baseAddress, baseAddress2 uint64
 		if table.isPIE {
-			baseAddress, err = getBaseAddress(pid)
+			atPhdr, err := getAT_PHDR(pid)
+			if err != nil {
+				return fmt.Errorf("getting AT_PHDR for %q: %w", task.Name, err)
+			}
+			baseAddress = atPhdr - table.phoff
+			baseAddress2, err = getBaseAddress(pid)
 			if err != nil {
 				return fmt.Errorf("getting base address for %q: %w", task.Name, err)
 			}
+			if baseAddress != baseAddress2 {
+				panic(fmt.Errorf("base address mismatch for %q: %d != %d", task.Name, baseAddress, baseAddress2))
+			}
+
 		}
 
 		s.resolveStackItemsWithTable(table, baseAddress, stackItems, res)
@@ -180,4 +191,55 @@ func getBaseAddress(pid uint32) (uint64, error) {
 	}
 
 	return 0, fmt.Errorf("main executable not found in maps")
+}
+
+func getAT_PHDR(pid uint32) (uint64, error) {
+	auxvPath := filepath.Join(host.HostProcFs, fmt.Sprint(pid), "auxv")
+	f, err := os.Open(auxvPath)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	var key, value uint64
+	for {
+		err := binary.Read(f, binary.LittleEndian, &key)
+		if err != nil {
+			break
+		}
+		err = binary.Read(f, binary.LittleEndian, &value)
+		if err != nil {
+			break
+		}
+		if key == 3 { // AT_PHDR
+			return value, nil
+		}
+	}
+	return 0, fmt.Errorf("AT_PHDR not found")
+}
+
+// getELFPhoff reads the ELF program header offset (e_phoff) from the given file.
+func getELFPhoff(file *os.File) (uint64, error) {
+	// Read ELF ident to determine 32/64 bit
+	var ident [16]byte
+	if _, err := file.ReadAt(ident[:], 0); err != nil {
+		return 0, err
+	}
+	is64 := ident[4] == 2
+
+	if is64 {
+		// e_phoff is at offset 32, 8 bytes
+		var phoff uint64
+		if err := binary.Read(io.NewSectionReader(file, 32, 8), binary.LittleEndian, &phoff); err != nil {
+			return 0, err
+		}
+		return phoff, nil
+	} else {
+		// e_phoff is at offset 28, 4 bytes
+		var phoff32 uint32
+		if err := binary.Read(io.NewSectionReader(file, 28, 4), binary.LittleEndian, &phoff32); err != nil {
+			return 0, err
+		}
+		return uint64(phoff32), nil
+	}
 }

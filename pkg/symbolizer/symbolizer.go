@@ -83,6 +83,7 @@ type symbolTable struct {
 	// PIE (Position Independent Executable) needs addresses to be adjusted with
 	// base address.
 	isPIE bool
+	phoff uint64 // Program header offset (e_phoff) in the ELF file.
 
 	timestamp time.Time
 }
@@ -344,9 +345,15 @@ func (s *Symbolizer) newSymbolTableFromFile(file *os.File) (*symbolTable, error)
 		return 0
 	})
 
+	phoff, err := getELFPhoff(file)
+	if err != nil {
+		return nil, fmt.Errorf("getting ELF program header offset: %w", err)
+	}
+
 	return &symbolTable{
 		symbols:   symbols,
 		isPIE:     elfFile.FileHeader.Type == elf.ET_DYN,
+		phoff:     phoff,
 		timestamp: time.Now(),
 	}, nil
 }
