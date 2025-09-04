@@ -60,6 +60,7 @@ GADGETS ?= \
 	ci/inner_fields \
 	ci/sched_cls_drop \
 	ci/image_inspect \
+	tailcall \
 	#
 
 DATE=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
