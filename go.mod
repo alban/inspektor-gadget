@@ -220,5 +220,6 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 )
 
-// replace go.opentelemetry.io/ebpf-profiler => /home/alban/go/src/github.com/open-telemetry/opentelemetry-ebpf-profiler
-replace go.opentelemetry.io/ebpf-profiler => github.com/alban/opentelemetry-ebpf-profiler v0.0.202537-0.20250904155015-5fc6d5da57d2
+replace go.opentelemetry.io/ebpf-profiler => /home/alban/go/src/github.com/open-telemetry/opentelemetry-ebpf-profiler
+
+// replace go.opentelemetry.io/ebpf-profiler => github.com/alban/opentelemetry-ebpf-profiler v0.0.202537-0.20250904155015-5fc6d5da57d2
