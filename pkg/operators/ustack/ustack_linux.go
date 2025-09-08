@@ -23,10 +23,10 @@ import (
 	"unsafe"
 
 	"github.com/cilium/ebpf"
+	otelhost "go.opentelemetry.io/ebpf-profiler/host"
 	oteltimes "go.opentelemetry.io/ebpf-profiler/times"
 	oteltracer "go.opentelemetry.io/ebpf-profiler/tracer"
 	oteltracertypes "go.opentelemetry.io/ebpf-profiler/tracer/types"
-
 	"golang.org/x/sys/unix"
 
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/operators"
@@ -121,7 +121,7 @@ func startOtelEbpfProfiler(gadgetCtx operators.GadgetContext, someMap *ebpf.Map)
 		return fmt.Errorf("failed to parse the included tracers: %w", err)
 	}
 
-	monitorInterval := 5.0 * time.Second
+	monitorInterval := 2.0 * time.Second
 
 	// Load the eBPF code and map definitions
 	trc, err := oteltracer.NewTracer(gadgetCtx.Context(), &oteltracer.Config{
@@ -145,6 +145,19 @@ func startOtelEbpfProfiler(gadgetCtx operators.GadgetContext, someMap *ebpf.Map)
 	}
 
 	logger.Infof("Starting OpenTelemetry eBPF Profiler: %v", trc)
+
+	// Inspect ELF files on request
+	trc.StartPIDEventProcessor(gadgetCtx.Context())
+
+	// Cleanup ebpf maps when a process terminates
+	if err := trc.AttachSchedMonitor(); err != nil {
+		return fmt.Errorf("failed to attach scheduler monitor: %w", err)
+	}
+
+	traceCh := make(chan *otelhost.Trace)
+	if err := trc.StartMapMonitors(gadgetCtx.Context(), traceCh); err != nil {
+		return fmt.Errorf("failed to start map monitors: %v", err)
+	}
 
 	kprobeUnwindNative := trc.GetEbpfProgram("kprobe_unwind_native")
 	logger.Infof("kprobe_unwind_native: %v", kprobeUnwindNative)
