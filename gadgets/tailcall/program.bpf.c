@@ -95,8 +95,8 @@ static __attribute__((noinline)) int subprog(struct trace_event_raw_sched_proces
 }
 
 static __attribute__((noinline)) int subprog_kprobe(void *ctx) {
-    bpf_printk("subprog_kprobe called");
-	u32 key = 0;
+    bpf_printk("subprog_kprobe called. Calling otel-ebpf-profiler's kprobe_unwind_native!");
+	u32 key = 2; // Entry set by the ebpf operator (hardcoded for now...)
 	bpf_tail_call(ctx, &tail_calls_kprobe, key);
     return 0;
 }
@@ -143,6 +143,9 @@ int BPF_KPROBE(ig_trace_cap_e, const struct cred *cred,
                struct user_namespace *targ_ns, int cap, int cap_opt)
 {
 	struct event *event;
+
+	if (gadget_should_discard_data_current())
+		return 0;
 
 	event = gadget_reserve_buf(&events, sizeof(struct event));
 	if (!event)

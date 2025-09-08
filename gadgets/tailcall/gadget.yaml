@@ -14,23 +14,3 @@ datasources:
           description: 'TODO: Fill field description'
 params:
   ebpf:
-    targ_comm:
-      key: targ_comm
-      defaultValue: ""
-      description: 'TODO: Fill parameter description'
-    targ_gid:
-      key: targ_gid
-      defaultValue: ""
-      description: 'TODO: Fill parameter description'
-    targ_pid:
-      key: targ_pid
-      defaultValue: ""
-      description: 'TODO: Fill parameter description'
-    targ_tid:
-      key: targ_tid
-      defaultValue: ""
-      description: 'TODO: Fill parameter description'
-    targ_uid:
-      key: targ_uid
-      defaultValue: ""
-      description: 'TODO: Fill parameter description'
