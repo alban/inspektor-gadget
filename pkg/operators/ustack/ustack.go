@@ -24,6 +24,7 @@ import (
 
 	"github.com/cilium/ebpf"
 	log "github.com/sirupsen/logrus"
+	_ "go.opentelemetry.io/ebpf-profiler/support"
 
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/datasource"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-service/api"
