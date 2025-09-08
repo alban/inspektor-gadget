@@ -146,5 +146,8 @@ func startOtelEbpfProfiler(gadgetCtx operators.GadgetContext, someMap *ebpf.Map)
 
 	logger.Infof("Starting OpenTelemetry eBPF Profiler: %v", trc)
 
+	kprobeUnwindNative := trc.GetEbpfProgram("kprobe_unwind_native")
+	logger.Infof("kprobe_unwind_native: %v", kprobeUnwindNative)
+	gadgetCtx.SetVar("kprobe_unwind_native", kprobeUnwindNative)
 	return nil
 }
