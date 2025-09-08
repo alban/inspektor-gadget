@@ -20,9 +20,13 @@ import (
 
 //go:wasmexport gadgetPreStart
 func gadgetPreStart() int32 {
-	api.SetConfig("programs.tail_func0.attach_to", "gadget_program_disabled")
-	api.SetConfig("programs.tail_func1.attach_to", "gadget_program_disabled")
-	api.SetConfig("programs.replacement_func0.attach_to", "gadget_program_disabled")
+	api.SetConfig("programs.tail_f0.attach_to", "gadget_program_disabled")
+	api.SetConfig("programs.tail_f1.attach_to", "gadget_program_disabled")
+
+	api.SetConfig("programs.tail_kprobe_f0.attach_to", "gadget_program_disabled")
+	api.SetConfig("programs.tail_kprobe_f1.attach_to", "gadget_program_disabled")
+
+	// api.SetConfig("programs.replacement_func0.attach_to", "gadget_program_disabled")
 	return 0
 }
 
