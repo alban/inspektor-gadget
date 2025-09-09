@@ -740,14 +740,14 @@ func (i *ebpfInstance) Start(gadgetCtx operators.GadgetContext) error {
 	}
 	i.collection = collection
 
-	if kprobeUnwindNativeI, ok := gadgetCtx.GetVar("kprobe_unwind_native"); ok {
-		kprobeUnwindNative, ok := kprobeUnwindNativeI.(*ebpf.Program)
+	if otelEbpfProgramI, ok := gadgetCtx.GetVar("otel-ebpf-program"); ok {
+		otelEbpfProgram, ok := otelEbpfProgramI.(*ebpf.Program)
 		if !ok {
-			return fmt.Errorf("invalid kprobe_unwind_native: expected *ebpf.Program, got %T", kprobeUnwindNativeI)
+			return fmt.Errorf("invalid otel ebpf program: expected *ebpf.Program, got %T", otelEbpfProgramI)
 		}
 		// FIXME: our test gadget "tailcall" uses this map "tail_calls_kprobe"
 		if progMap, ok := collection.Maps["tail_calls_kprobe"]; ok {
-			err := progMap.Update(uint32(2), kprobeUnwindNative, ebpf.UpdateAny)
+			err := progMap.Update(uint32(2), otelEbpfProgram, ebpf.UpdateAny)
 			if err != nil {
 				return fmt.Errorf("updating tail_calls_kprobe map: %w", err)
 			}
