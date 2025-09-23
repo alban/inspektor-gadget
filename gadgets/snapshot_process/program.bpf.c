@@ -55,6 +55,18 @@ int ig_snap_proc(struct bpf_iter__task *ctx)
 				 TASK_COMM_LEN);
 	}
 
+	process.start_code = task->mm ? task->mm->start_code : 0;
+	process.end_code = task->mm ? task->mm->end_code : 0;
+	process.start_data = task->mm ? task->mm->start_data : 0;
+	process.end_data = task->mm ? task->mm->end_data : 0;
+	process.start_brk = task->mm ? task->mm->start_brk : 0;
+	process.brk = task->mm ? task->mm->brk : 0;
+	process.start_stack = task->mm ? task->mm->start_stack : 0;
+	process.arg_start = task->mm ? task->mm->arg_start : 0;
+	process.arg_end = task->mm ? task->mm->arg_end : 0;
+	process.env_start = task->mm ? task->mm->env_start : 0;
+	process.env_end = task->mm ? task->mm->env_end : 0;
+
 	bpf_seq_write(seq, &process, sizeof(process));
 
 	return 0;

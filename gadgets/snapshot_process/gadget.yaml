@@ -6,6 +6,39 @@ sourceURL: https://github.com/inspektor-gadget/inspektor-gadget/tree/main/gadget
 datasources:
   processes:
     fields:
+      start_code:
+        annotations:
+          columns.hex: true
+      end_code:
+        annotations:
+          columns.hex: true
+      start_data:
+        annotations:
+          columns.hex: true
+      end_data:
+        annotations:
+          columns.hex: true
+      start_brk:
+        annotations:
+          columns.hex: true
+      brk:
+        annotations:
+          columns.hex: true
+      start_stack:
+        annotations:
+          columns.hex: true
+      arg_start:
+        annotations:
+          columns.hex: true
+      arg_end:
+        annotations:
+          columns.hex: true
+      env_start:
+        annotations:
+          columns.hex: true
+      env_end:
+        annotations:
+          columns.hex: true
 params:
   ebpf:
     show_threads:

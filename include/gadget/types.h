@@ -133,6 +133,10 @@ struct gadget_process {
 
 	struct gadget_creds creds;
 	struct gadget_parent parent;
+
+	unsigned long start_code, end_code, start_data, end_data;
+	unsigned long start_brk, brk, start_stack;
+	unsigned long arg_start, arg_end, env_start, env_end;
 };
 
 #define GADGET_SE_PATH_MAX 4096
