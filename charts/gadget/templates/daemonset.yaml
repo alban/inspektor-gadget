@@ -229,8 +229,72 @@ spec:
             - mountPath: /var/run/ig/wasm-cache
               name: wasm-cache
               readOnly: false
+        {{- if .Values.gpu.enabled }}
+        # gpu-ebpf-bridge sidecar. See docs/design/004-gpu-telemetry-enricher.md.
+        - name: gpu-ebpf-bridge
+          image: "{{ .Values.gpu.image.repository }}:{{ .Values.gpu.image.tag | default (include "gadget.image.tag" .) }}"
+          imagePullPolicy: {{ .Values.gpu.image.pullPolicy }}
+          args:
+            - --mode=real
+            - --pin-dir=/sys/fs/bpf
+            - --poll-interval={{ .Values.gpu.pollInterval }}
+            - --log-level={{ .Values.gpu.logLevel }}
+            - --keep-pins=false
+          securityContext:
+            privileged: true
+          {{- with .Values.gpu.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            {{- if eq .Values.gpu.accessMode "toolkit-env" }}
+            # NVIDIA Container Toolkit prestart hook triggers on
+            # these env vars, bind-mounting libnvidia-ml.so.1 and
+            # granting /dev/nvidia* access without reserving a GPU.
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "all"
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "utility"
+            {{- else if eq .Values.gpu.accessMode "hostpath" }}
+            # HostPath mode: LD_LIBRARY_PATH points the bridge at
+            # the host's bind-mounted NVIDIA libraries.
+            - name: LD_LIBRARY_PATH
+              value: "/host/nvidia-libs:/usr/lib/x86_64-linux-gnu"
+            {{- end }}
+            {{- if .Values.gpu.additionalEnv }}
+            {{- toYaml .Values.gpu.additionalEnv | nindent 12 }}
+            {{- end }}
+          {{- if eq .Values.gpu.accessMode "device-plugin" }}
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+            {{- with .Values.gpu.resources }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          volumeMounts:
+            # Shared with the main IG container so both see the
+            # same pinned maps. The bridge writes, gadgets read.
+            - mountPath: /sys/fs/bpf
+              name: bpffs
+            {{- if eq .Values.gpu.accessMode "hostpath" }}
+            - mountPath: /host/nvidia-libs
+              name: nvidia-libs
+              readOnly: true
+            - mountPath: /dev/nvidiactl
+              name: dev-nvidiactl
+            - mountPath: /dev/nvidia-uvm
+              name: dev-nvidia-uvm
+            - mountPath: /dev/nvidia0
+              name: dev-nvidia0
+            {{- end }}
+        {{- end }}
       nodeSelector:
+        {{- if and .Values.gpu.enabled .Values.gpu.nodeSelector }}
+        {{- mergeOverwrite (deepCopy .Values.nodeSelector) .Values.gpu.nodeSelector | toYaml | nindent 8 }}
+        {{- else }}
         {{- .Values.nodeSelector | toYaml | nindent 8 }}
+        {{- end }}
       affinity:
         {{- toYaml .Values.affinity | nindent 8 }}
       tolerations:
@@ -300,3 +364,25 @@ spec:
             defaultMode: 0o400
         - name: wasm-cache
           emptyDir: {}
+        {{- if and .Values.gpu.enabled (eq .Values.gpu.accessMode "hostpath") }}
+        # HostPath mounts for the gpu-ebpf-bridge sidecar when using
+        # the "hostpath" accessMode (fallback for clusters without the
+        # NVIDIA Container Toolkit; the toolkit-env accessMode does
+        # not need any of these because the runc prestart hook
+        # injects them automatically).
+        - name: nvidia-libs
+          hostPath:
+            path: {{ .Values.gpu.hostpath.nvidiaLibsPath }}
+        - name: dev-nvidiactl
+          hostPath:
+            path: /dev/nvidiactl
+            type: CharDevice
+        - name: dev-nvidia-uvm
+          hostPath:
+            path: /dev/nvidia-uvm
+            type: CharDevice
+        - name: dev-nvidia0
+          hostPath:
+            path: /dev/nvidia0
+            type: CharDevice
+        {{- end }}
