@@ -68,6 +68,19 @@ func RequireEnvironmentVariables(t testing.TB) {
 	}
 }
 
+// RequireGpuEbpfBridge is called by tests that spawn a gpu-ebpf-bridge
+// subprocess (currently only gadgets/ci/gpu). The env var is the
+// analogue of IG_PATH for the bridge binary: gadgets/Makefile sets it
+// from GPU_EBPF_BRIDGE via the test-local target-specific override.
+// Kept separate from RequireEnvironmentVariables because most gadget
+// tests do not need the bridge and should not skip when it is
+// unavailable.
+func RequireGpuEbpfBridge(t testing.TB) {
+	if os.Getenv("GPU_EBPF_BRIDGE_PATH") == "" {
+		t.Skip("environment variable GPU_EBPF_BRIDGE_PATH undefined; the caller must build cmd/gpu-ebpf-bridge and set GPU_EBPF_BRIDGE")
+	}
+}
+
 func RemoveMemlock(t testing.TB) {
 	t.Helper()
 	// Some kernel versions need to have the memlock rlimit removed
