@@ -95,8 +95,11 @@ jobs:
     - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b # v0.7
     - name: Update latest tag
       env:
+        CONTAINER_REPO_NAMESPACE: ${{ env.REGISTRY }}/${{ github.repository_owner }}
+        GADGET_REPOSITORY: ${{ env.REGISTRY }}/${{ github.repository_owner }}/gadget
         IMAGE_TAG: ${{ github.event.release.tag_name }}
         GADGET_TAG: ${{ github.event.release.tag_name }}
+        LATEST_IMAGE_TAG: fake-latest-gpu-bridge-20260730
         GITHUB_TOKEN: ${{ github.token }}
       run: |
         LATEST_TAG=$(gh release list --limit 1000 --json tagName | jq -r '.[].tagName' | sort -V | tail -n1)

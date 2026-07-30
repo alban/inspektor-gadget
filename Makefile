@@ -4,6 +4,7 @@ VERSION :=
 CONTAINER_REPO_NAMESPACE ?= ghcr.io/inspektor-gadget
 CONTAINER_REPO ?= $(CONTAINER_REPO_NAMESPACE)/inspektor-gadget
 IMAGE_TAG ?= $(shell ./tools/image-tag branch)
+LATEST_IMAGE_TAG ?= latest
 
 CONTAINER_IMAGES = \
 	inspektor-gadget \
@@ -464,7 +465,7 @@ update-vmlinux:
 
 .PHONY:
 %-update-latest-tag:
-	$(CRANE) copy $(CONTAINER_REPO_NAMESPACE)/$*:$(IMAGE_TAG) $(CONTAINER_REPO_NAMESPACE)/$*:latest
+	$(CRANE) copy $(CONTAINER_REPO_NAMESPACE)/$*:$(IMAGE_TAG) $(CONTAINER_REPO_NAMESPACE)/$*:$(LATEST_IMAGE_TAG)
 
 .PHOHY:
 update-latest-tag: $(addsuffix -update-latest-tag,$(CONTAINER_IMAGES))

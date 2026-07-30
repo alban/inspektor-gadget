@@ -4,6 +4,7 @@ ROOT_DIR:=$(dir $(realpath $(firstword $(MAKEFILE_LIST))))
 
 GADGET_TAG ?= $(shell ../tools/image-tag branch)
 GADGET_REPOSITORY ?= ghcr.io/inspektor-gadget/gadget
+LATEST_IMAGE_TAG ?= latest
 BUILDER_IMAGE ?= ghcr.io/inspektor-gadget/gadget-builder:main
 KERNEL_REPOSITORY ?= ghcr.io/inspektor-gadget/ci-kernels
 IG ?= ig
@@ -258,7 +259,7 @@ test-k8s: test-integration
 
 .PHONY:
 %-update-latest-tag:
-	$(CRANE) copy $(GADGET_REPOSITORY)/$*:$(GADGET_TAG) $(GADGET_REPOSITORY)/$*:latest
+	$(CRANE) copy $(GADGET_REPOSITORY)/$*:$(GADGET_TAG) $(GADGET_REPOSITORY)/$*:$(LATEST_IMAGE_TAG)
 
 .PHONY:
 update-latest-tag: $(addsuffix -update-latest-tag,$(GADGETS))
