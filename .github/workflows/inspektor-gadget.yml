@@ -1960,7 +1960,9 @@ jobs:
           git diff --exit-code HEAD --
 
           # Avoid building the gadgets again
-          make -C gadgets/ push-existing -j$(nproc)
+          # -j1: push gadgets serially to avoid flaky GHCR 500s from
+          # concurrent manifest PUTs during the release rehearsal.
+          make -C gadgets/ push-existing -j1
       - name: Sign the gadgets
         if: needs.check-secrets.outputs.cosign == 'true'
         env:

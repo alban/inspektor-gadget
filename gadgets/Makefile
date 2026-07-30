@@ -159,7 +159,13 @@ push: $(addsuffix -push,$(GADGETS))
 
 %-push-existing: %
 	@echo "Pushing existing $*"
-	@sudo -E $(IG) image push $(GADGET_REPOSITORY)/$*:$(GADGET_TAG) $(IG_FLAGS)
+	@n=0; until [ $$n -ge 5 ]; do \
+		sudo -E $(IG) image push $(GADGET_REPOSITORY)/$*:$(GADGET_TAG) $(IG_FLAGS) && break; \
+		n=$$((n+1)); \
+		echo "Push of $* failed (attempt $$n), retrying in $$((n*5))s..."; \
+		sleep $$((n*5)); \
+	done; \
+	[ $$n -lt 5 ]
 
 .PHONY:
 push-existing: $(addsuffix -push-existing,$(GADGETS))
