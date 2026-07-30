@@ -1947,11 +1947,28 @@ jobs:
           NEEDS_BUILD_HELPER_IMAGES_OUTPUTS_GADGET_BUILDER_IMAGE: ${{ needs.build-helper-images.outputs.gadget_builder_image }}
         run: |
           cosign verify --key pkg/resources/inspektor-gadget.pub ${NEEDS_BUILD_HELPER_IMAGES_OUTPUTS_GADGET_BUILDER_IMAGE}
+      - name: Determine gadget push parallelism
+        id: gadget-jobs
+        env:
+          GADGET_REPOSITORY: ${{ steps.set-repo-determine-image-tag.outputs.gadget-repository }}
+        run: |
+          # ghcr.io intermittently returns HTTP 500 on concurrent
+          # manifest PUTs, so pushing/signing gadgets in parallel there
+          # randomly fails the whole job. Push and sign serially on
+          # ghcr.io; other registries (e.g. ttl.sh on pull requests) can
+          # still use full parallelism.
+          # https://github.com/orgs/community/discussions/187118
+          if [[ "$GADGET_REPOSITORY" == ghcr.io/* ]]; then
+            echo "jobs=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "jobs=$(nproc)" >> "$GITHUB_OUTPUT"
+          fi
       - name: Build gadgets
         env:
           BUILDER_IMAGE: ${{ needs.build-helper-images.outputs.gadget_builder_image }}
           GADGET_REPOSITORY: ${{ steps.set-repo-determine-image-tag.outputs.gadget-repository }}
           GADGET_TAG: ${{ steps.set-repo-determine-image-tag.outputs.gadget-tag }}
+          GADGET_PUSH_RETRIES: 5
           CFLAGS: "-Werror"
         run: |
           make build-gadgets -o install/ig -j$(nproc)
@@ -1960,7 +1977,7 @@ jobs:
           git diff --exit-code HEAD --
 
           # Avoid building the gadgets again
-          make -C gadgets/ push-existing -j$(nproc)
+          make -C gadgets/ push-existing -j${{ steps.gadget-jobs.outputs.jobs }}
       - name: Sign the gadgets
         if: needs.check-secrets.outputs.cosign == 'true'
         env:
@@ -1968,8 +1985,9 @@ jobs:
           COSIGN_PRIVATE_KEY: '${{ secrets.COSIGN_PRIVATE_KEY }}'
           GADGET_REPOSITORY: ${{ steps.set-repo-determine-image-tag.outputs.gadget-repository }}
           GADGET_TAG: ${{ steps.set-repo-determine-image-tag.outputs.gadget-tag }}
+          GADGET_PUSH_RETRIES: 5
         run: |
-          make -C gadgets/ sign-existing -j$(nproc)
+          make -C gadgets/ sign-existing -j${{ steps.gadget-jobs.outputs.jobs }}
 
   gadgets-unittest:
     name: Gadgets unit tests
